@@ -35,3 +35,7 @@ hf_token*
 .idea/
 .vscode/
 .DS_Store
+
+# Space local store
+hf/space/data/
+hf/space/seed/

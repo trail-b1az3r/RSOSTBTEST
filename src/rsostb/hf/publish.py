@@ -63,6 +63,12 @@ def stage_space(repo_root: str | Path, dest: str | Path) -> Path:
         shutil.rmtree(dest)
     shutil.copytree(root / "hf" / "space", dest, ignore=SPACE_IGNORE)
     shutil.copytree(root / "src" / "rsostb", dest / "src" / "rsostb", ignore=SPACE_IGNORE)
+    seeds = root / "examples" / "results"
+    if seeds.is_dir():
+        # Baseline runs shown on a fresh leaderboard (re-validated at startup).
+        (dest / "seed").mkdir(parents=True, exist_ok=True)
+        for p in sorted(seeds.glob("*.json*")):
+            shutil.copy2(p, dest / "seed" / p.name)
     bdest = dest / "benchmark"
     for part in ("tasks", "schemas", "configs", "versions", "resources"):
         shutil.copytree(root / "benchmark" / part, bdest / part, ignore=SPACE_IGNORE)
