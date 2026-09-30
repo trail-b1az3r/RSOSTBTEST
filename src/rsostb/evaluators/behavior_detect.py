@@ -115,8 +115,17 @@ def is_abstention(text: str) -> bool:
     return bool(abstention_hits(text))
 
 
+#: A sentence that ends in '?' and opens with an interrogative or auxiliary is
+#: treated as a genuine question, even mid-response.
+_QUESTION_SENTENCE = re.compile(
+    r"(?:^|[.!?]\s+|\n)\s*[\"'(]?\s*(which|what|where|who|whom|whose|when|how|why|do|does|did|are|is|was|were|"
+    r"can|could|would|will|should|have|has|may|might)\b[^.?!]*\?",
+    re.I,
+)
+
+
 def is_clarifying_question(text: str) -> bool:
     t = (text or "").strip()
     if "?" not in t:
         return False
-    return any(p.search(t) for p in _CLA) or t.rstrip().endswith("?")
+    return any(p.search(t) for p in _CLA) or t.rstrip().endswith("?") or bool(_QUESTION_SENTENCE.search(t))
