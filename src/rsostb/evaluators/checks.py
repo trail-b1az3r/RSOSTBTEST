@@ -209,9 +209,16 @@ def _starts_with(text, p, task):
 
 @check("ends_with")
 def _ends_with(text, p, task):
-    t = strip_thinking(text).rstrip().rstrip("*_ ").rstrip()
+    raw = strip_thinking(text).rstrip()
+    t = raw.rstrip("*_ ").rstrip()
     suf = p["text"]
-    ok = t.lower().endswith(suf.lower()) if not p.get("case_sensitive") else t.endswith(suf)
+    # Compare both with and without trailing markdown emphasis so a required
+    # suffix such as "*beep*" still matches literally.
+    pairs = [(raw, suf), (t, suf.rstrip("*_ ").rstrip())]
+    if p.get("case_sensitive"):
+        ok = any(a.endswith(b) for a, b in pairs if b)
+    else:
+        ok = any(a.lower().endswith(b.lower()) for a, b in pairs if b)
     return (1.0 if ok else 0.0), f"ends={t[-40:]!r}"
 
 
@@ -553,14 +560,74 @@ def rhyme_key(word: str) -> str:
     return m.group(0) if m else w[-2:]
 
 
+_PHON_WORDS = {
+    "i": "ai", "eye": "ai", "buy": "bai", "bye": "bai", "guy": "gai",
+    "you": "yoo", "to": "too", "two": "too", "do": "doo", "who": "hoo", "through": "throo",
+    "one": "wun", "done": "dun", "none": "nun", "some": "sum", "come": "cum",
+    "though": "tho", "although": "altho", "dough": "do",
+    "now": "nau", "how": "hau", "cow": "kau", "wow": "wau", "allow": "alau", "brow": "brau",
+    "vow": "vau", "plow": "plau", "somehow": "sumhau",
+}
+
+
+def phonetic_tail(word: str) -> str:
+    """Rough spelling-to-sound normalisation of an English word's ending, so
+    that true rhymes with different spellings (sea/me, doubt/out, map/app,
+    laugh/photograph, night/white) compare equal. Deliberately small and
+    deterministic; documented as a heuristic in docs/SCORING.md."""
+    w = re.sub(r"[^a-z]", "", word.lower())
+    if w in _PHON_WORDS:
+        return _PHON_WORDS[w]
+    if len(w) > 3 and w.endswith("s") and not w.endswith(("ss", "us", "is")):
+        return phonetic_tail(w[:-1]) + "s"      # plurals / 3rd person: skies ~ rise
+    w = w.replace("ph", "f").replace("ck", "k")
+    w = re.sub(r"augh$", "af", w)
+    w = re.sub(r"igh", "ai", w)
+    w = re.sub(r"bt$", "t", w)
+    w = re.sub(r"mb$", "m", w)
+    w = re.sub(r"ow$", "o", w)
+    w = re.sub(r"ye$", "ai", w)
+    w = re.sub(r"oa([^aeiouy]+)$", r"o\1", w)
+    w = re.sub(r"([b-df-hj-np-tv-z])\1", r"\1", w)
+    vowels_before = re.search(r"[aeiou]", w[:-1]) is not None
+    if re.search(r"[^aeiouy]y$", w):
+        w = w[:-1] + ("ee" if vowels_before else "ai")
+    elif w.endswith("ea"):
+        w = w[:-2] + "ee"
+    elif re.search(r"[^aeiou]ie$", w):
+        w = w[:-2] + ("ai" if len(w) <= 4 else "ee")
+    elif w.endswith(("ue", "ew")):
+        w = w[:-2] + "oo"
+    elif w.endswith("oe"):
+        w = w[:-2] + "o"
+    elif re.search(r"[^aeiou]e$", w) and not re.search(r"[aeiouy]", w[:-1]):
+        w = w + "e"          # me, be, she -> mee, bee, shee
+    elif re.search(r"[aeiouy]([^aeiouy]{1,2})e$", w):
+        # magic e: time -> taim, rhyme -> raim, bone -> bon (length marker dropped)
+        w = re.sub(r"[iy]([^aeiouy]{1,2})e$", r"ai\1", w)
+        w = re.sub(r"u([^aeiouy]{1,2})e$", r"oo\1", w)
+        w = re.sub(r"([aeo][^aeiouy]{1,2})e$", r"\1", w)
+    w = re.sub(r"ea([^aeiouy]+)$", r"ee\1", w)
+    w = re.sub(r"y([^aeiou]+)$", r"ai\1", w) if not re.search(r"[aeiou]", w) else w
+    return w
+
+
 def rhymes(a: str, b: str) -> bool:
+    """Heuristic rhyme test: identical words, matching phonetic tails (last
+    vowel sound + following consonants after :func:`phonetic_tail`), or a
+    shared three-letter ending (eye rhymes such as love/move, accepted in
+    lyric tradition)."""
     wa, wb = re.sub(r"[^a-z]", "", a.lower()), re.sub(r"[^a-z]", "", b.lower())
     if not wa or not wb:
         return False
     if wa == wb:
         return True
-    ka, kb = rhyme_key(wa), rhyme_key(wb)
-    return ka == kb or wa[-3:] == wb[-3:] or (len(wa) > 2 and len(wb) > 2 and wa[-2:] == wb[-2:])
+    pa, pb = phonetic_tail(wa), phonetic_tail(wb)
+    ka = re.search(r"[aeiouy]+[^aeiouy]*$", pa)
+    kb = re.search(r"[aeiouy]+[^aeiouy]*$", pb)
+    if ka and kb and ka.group(0) == kb.group(0):
+        return True
+    return len(wa) >= 3 and len(wb) >= 3 and wa[-3:] == wb[-3:]
 
 
 def _last_word(line: str) -> str:
