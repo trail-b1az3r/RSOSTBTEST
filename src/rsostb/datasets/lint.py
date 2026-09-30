@@ -166,8 +166,8 @@ def lint_task(task: Task, bench: Benchmark, report: LintReport) -> None:  # noqa
         if len(ids) != len(set(ids)):
             report.add("error", tid, "duplicate case ids")
         for c in ev.get("cases") or []:
-            if not c.get("id"):
-                report.add("error", tid, "every case needs an id")
+            if not isinstance(c.get("id"), str) or not c.get("id"):
+                report.add("error", tid, f"every case needs a string id (got {c.get('id')!r}; beware YAML booleans off/on/yes/no and null)")
             if float(c.get("timeout", 0) or 0) > MAX_CASE_TIMEOUT:
                 report.add("error", tid, f"case timeout above {MAX_CASE_TIMEOUT}s")
             if int(c.get("max_steps", 0) or 0) > MAX_STEPS:

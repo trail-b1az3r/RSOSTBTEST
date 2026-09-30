@@ -590,7 +590,9 @@ class Machine:
             self.store(addr + 4 * i, 4, v)
 
     def write_bytes(self, addr: int, data: bytes) -> None:
-        self._check(addr, len(data) or 1)
+        # Bulk harness write: bounds-check only, no per-access alignment rule.
+        if addr < 0 or addr + len(data) > MEM_SIZE:
+            raise EmuError(f"memory write out of bounds at 0x{addr:08x}")
         self.mem[addr: addr + len(data)] = data
 
     def read_cstring(self, addr: int, limit: int = 4096) -> str:

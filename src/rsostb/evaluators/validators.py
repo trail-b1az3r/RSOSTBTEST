@@ -283,6 +283,8 @@ def orbit_tests(value, p):
     correct predictions, scaled by required coverage patterns."""
     from ..sandbox.orbit import run_orbit
 
+    if isinstance(value, dict) and "tests" in value:
+        value = value["tests"]
     tests = _as_list(value)
     need = int(p.get("min_tests", 1))
     if not tests:

@@ -13,7 +13,7 @@ from typing import Any
 VOID = {"area", "base", "br", "col", "embed", "hr", "img", "input", "link", "meta", "source", "track", "wbr"}
 
 
-@dataclass
+@dataclass(eq=False)
 class Node:
     tag: str
     attrs: dict[str, str] = field(default_factory=dict)
