@@ -1,0 +1,14 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/trail-b1az3r/RSOSTBTEST/benchmark/schemas/tool.schema.json",
+  "title": "RSOSTBTEST-pro tool definition",
+  "description": "A tool offered to the model. Parameters follow JSON Schema, matching the OpenAI/Anthropic function-calling convention.",
+  "type": "object",
+  "required": ["name", "description", "parameters"],
+  "properties": {
+    "name": {"type": "string", "pattern": "^[a-zA-Z_][a-zA-Z0-9_]{0,63}$"},
+    "description": {"type": "string", "minLength": 1},
+    "parameters": {"type": "object"},
+    "destructive": {"type": "boolean"}
+  }
+}

@@ -11,6 +11,7 @@ alternative before a future benchmark release adopts it.
 """
 from __future__ import annotations
 
+import math
 from collections import defaultdict
 from typing import Any
 
@@ -26,12 +27,14 @@ def category_balanced(rows: list[tuple[dict[str, Any], Any]], bench: BenchmarkCo
     groups = defaultdict(list)
     for tr, task in rows:
         groups[task.category].append((tr, task))
-    num = den = 0.0
-    for cat, crow in groups.items():
-        a = aggregate(crow, scoring)
+    nums: list[float] = []
+    dens: list[float] = []
+    for cat in sorted(groups):
+        a = aggregate(groups[cat], scoring)
         w = bench.category(cat).weight
-        num += w * normalize(a["points"], a["max_points"], a["min_points"])
-        den += w
+        nums.append(w * normalize(a["points"], a["max_points"], a["min_points"]))
+        dens.append(w)
+    num, den = math.fsum(nums), math.fsum(dens)
     return max(-1.0, min(1.0, num / den)) if den else 0.0
 
 

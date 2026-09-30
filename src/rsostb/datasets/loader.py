@@ -41,9 +41,13 @@ class Benchmark:
     manifest: dict[str, Any] | None = None
     include_private: bool = False
     _by_id: dict[str, Task] = field(default_factory=dict, repr=False)
+    _dataset_hash: str = field(default="", repr=False)
 
     def __post_init__(self) -> None:
         self._by_id = {t.id: t for t in self.tasks}
+        # Pinned at load time: the hash identifies the data as shipped, so an
+        # in-memory mutation during a run can never silently change it.
+        self._dataset_hash = compute_dataset_hash(self.tasks, self.resources)
 
     @property
     def categories(self) -> list[str]:
@@ -68,7 +72,11 @@ class Benchmark:
 
     @property
     def dataset_hash(self) -> str:
-        return compute_dataset_hash(self.tasks, self.resources)
+        return self._dataset_hash
+
+    def verify_unmodified(self) -> bool:
+        """True if the in-memory tasks still hash to the value pinned at load."""
+        return compute_dataset_hash(self.tasks, self.resources) == self._dataset_hash
 
     @property
     def scoring_config_hash(self) -> str:

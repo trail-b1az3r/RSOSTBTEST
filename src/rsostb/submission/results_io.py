@@ -1,4 +1,5 @@
-"""Reading and writing results files (``results.json`` and ``results.jsonl``).
+"""Reading and writing results files (``results.json`` and ``results.jsonl``,
+optionally gzip-compressed as ``.json.gz`` / ``.jsonl.gz``).
 
 JSONL layout: one ``{"type": "header", ...}`` line (everything except scores
 and task results), one ``{"type": "task_result", ...}`` line per task, and a
@@ -6,6 +7,8 @@ final ``{"type": "summary", "scores": {...}}`` line.
 """
 from __future__ import annotations
 
+import gzip
+import io
 import json
 from pathlib import Path
 from typing import Any
@@ -17,18 +20,33 @@ class ResultsFormatError(ValueError):
     pass
 
 
+GZIP_MAGIC = b"\x1f\x8b"
+
+
+def _base_name(name: str) -> str:
+    return name[:-3] if name.endswith(".gz") else name
+
+
+def serialize_results(doc: dict[str, Any], name: str) -> str:
+    if _base_name(name).endswith(".jsonl"):
+        header = {k: v for k, v in doc.items() if k not in ("task_results", "scores")}
+        lines = [json.dumps({"type": "header", **header}, ensure_ascii=False)]
+        lines += [json.dumps({"type": "task_result", **tr}, ensure_ascii=False) for tr in doc.get("task_results", [])]
+        lines.append(json.dumps({"type": "summary", "scores": doc.get("scores")}, ensure_ascii=False))
+        return "\n".join(lines) + "\n"
+    return json.dumps(doc, indent=1, ensure_ascii=False)
+
+
 def write_results(doc: dict[str, Any], path: str | Path) -> Path:
     p = Path(path)
     p.parent.mkdir(parents=True, exist_ok=True)
-    if p.suffix == ".jsonl":
-        header = {k: v for k, v in doc.items() if k not in ("task_results", "scores")}
-        with open(p, "w", encoding="utf-8") as fh:
-            fh.write(json.dumps({"type": "header", **header}, ensure_ascii=False) + "\n")
-            for tr in doc.get("task_results", []):
-                fh.write(json.dumps({"type": "task_result", **tr}, ensure_ascii=False) + "\n")
-            fh.write(json.dumps({"type": "summary", "scores": doc.get("scores")}, ensure_ascii=False) + "\n")
+    text = serialize_results(doc, p.name)
+    if p.name.endswith(".gz"):
+        # mtime=0 keeps the compressed bytes reproducible for identical results.
+        with open(p, "wb") as raw, gzip.GzipFile(fileobj=raw, mode="wb", mtime=0) as gz:
+            gz.write(text.encode("utf-8"))
     else:
-        p.write_text(json.dumps(doc, indent=1, ensure_ascii=False), encoding="utf-8")
+        p.write_text(text, encoding="utf-8")
     return p
 
 
@@ -80,8 +98,28 @@ def parse_results_text(text: str, name: str = "") -> dict[str, Any]:
     return doc
 
 
+def parse_results_bytes(data: bytes, name: str = "") -> dict[str, Any]:
+    """Parse raw bytes (plain or gzip). Decompression is capped at
+    MAX_RESULTS_BYTES so a crafted archive cannot exhaust memory."""
+    if data[:2] == GZIP_MAGIC:
+        with gzip.GzipFile(fileobj=io.BytesIO(data)) as gz:
+            try:
+                data = gz.read(MAX_RESULTS_BYTES + 1)
+            except (OSError, EOFError) as exc:
+                raise ResultsFormatError(f"corrupt gzip data: {exc}") from None
+        if len(data) > MAX_RESULTS_BYTES:
+            raise ResultsFormatError("results file is too large (decompressed)")
+    elif len(data) > MAX_RESULTS_BYTES:
+        raise ResultsFormatError("results file is too large")
+    try:
+        text = data.decode("utf-8")
+    except UnicodeDecodeError:
+        raise ResultsFormatError("results file is not valid UTF-8") from None
+    return parse_results_text(text, _base_name(name))
+
+
 def read_results(path: str | Path) -> dict[str, Any]:
     p = Path(path)
     if p.stat().st_size > MAX_RESULTS_BYTES:
         raise ResultsFormatError("results file is too large")
-    return parse_results_text(p.read_text(encoding="utf-8"), p.name)
+    return parse_results_bytes(p.read_bytes(), p.name)

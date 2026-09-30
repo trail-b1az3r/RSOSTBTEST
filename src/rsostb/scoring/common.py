@@ -44,8 +44,8 @@ def task_weight(task, bench: BenchmarkConfig, scoring: ScoringConfig) -> float:
 
 def penalty_total(events: dict[str, float], scoring: ScoringConfig) -> float:
     mags, caps = scoring.penalties, scoring.penalty_caps
-    total = 0.0
-    for name, count in (events or {}).items():
+    parts: list[float] = []
+    for name, count in sorted((events or {}).items()):
         if name not in mags:
             raise ScoringError(f"unknown penalty event {name!r}")
         if count < 0 or not math.isfinite(count):
@@ -53,20 +53,20 @@ def penalty_total(events: dict[str, float], scoring: ScoringConfig) -> float:
         amount = mags[name] * count
         if name in caps:
             amount = min(amount, caps[name])
-        total += amount
-    return total
+        parts.append(amount)
+    return math.fsum(parts)
 
 
 def bonus_total(events: dict[str, float], scoring: ScoringConfig) -> float:
     mags = scoring.bonuses
-    total = 0.0
-    for name, count in (events or {}).items():
+    parts: list[float] = []
+    for name, count in sorted((events or {}).items()):
         if name not in mags:
             raise ScoringError(f"unknown bonus event {name!r}")
         if count < 0 or not math.isfinite(count):
             raise ScoringError(f"invalid count for bonus {name!r}")
-        total += mags[name] * count
-    return min(total, scoring.bonus_cap)
+        parts.append(mags[name] * count)
+    return min(math.fsum(parts), scoring.bonus_cap)
 
 
 def raw_task_score(credit: float, events: dict[str, float], bonus_events: dict[str, float],
@@ -86,8 +86,12 @@ def points_for(r: float, max_score: float, min_score: float) -> float:
 
 
 def score_task_result(task, tr: dict[str, Any], bench: BenchmarkConfig, scoring: ScoringConfig) -> dict[str, Any]:
-    """Fill the numeric fields of a task result from credit + events."""
-    r, pen, bon = raw_task_score(tr.get("credit", 0.0), tr.get("events") or {}, tr.get("bonus_events") or {}, scoring)
+    """Fill the numeric fields of a task result from credit + events.
+
+    Idempotent: points are derived from the *stored* (rounded) credit, so
+    re-scoring a serialized results file reproduces every number exactly."""
+    credit = round(clamp(float(tr.get("credit", 0.0)), 0.0, 1.0), 6)
+    r, pen, bon = raw_task_score(credit, tr.get("events") or {}, tr.get("bonus_events") or {}, scoring)
     w = task_weight(task, bench, scoring)
     pts = points_for(r, task.max_score, task.min_score)
     out = dict(tr)
@@ -98,7 +102,7 @@ def score_task_result(task, tr: dict[str, Any], bench: BenchmarkConfig, scoring:
         difficulty=task.difficulty,
         weight_class=task.weight_class,
         evaluation_type=task.evaluation_type,
-        credit=round(clamp(float(tr.get("credit", 0.0)), 0.0, 1.0), 6),
+        credit=credit,
         penalty=round(pen, 6),
         bonus=round(bon, 6),
         raw_score=round(r, 6),
@@ -131,15 +135,20 @@ def percentage(total: float, max_total: float, min_total: float) -> float:
 
 def aggregate(rows: Iterable[tuple[dict[str, Any], Any]], scoring: ScoringConfig) -> dict[str, Any]:
     """Sum weighted points over (task_result, task) pairs."""
-    tot = mx = mn = wsum = 0.0
-    n = 0
+    # math.fsum is exactly rounded, so totals do not depend on task order: a
+    # validator re-scoring the file in a different order gets identical numbers.
+    pts: list[float] = []
+    maxs: list[float] = []
+    mins: list[float] = []
+    ws: list[float] = []
     for tr, task in rows:
         w = tr["weight"]
-        tot += tr["weighted_points"]
-        mx += w * task.max_score
-        mn += w * task.min_score
-        wsum += w
-        n += 1
+        pts.append(tr["weighted_points"])
+        maxs.append(w * task.max_score)
+        mins.append(w * task.min_score)
+        ws.append(w)
+    tot, mx, mn, wsum = math.fsum(pts), math.fsum(maxs), math.fsum(mins), math.fsum(ws)
+    n = len(pts)
     return {
         "points": round(tot, 4),
         "max_points": round(mx, 4),

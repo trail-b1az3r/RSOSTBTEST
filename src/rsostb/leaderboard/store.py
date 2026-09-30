@@ -18,13 +18,13 @@ from pathlib import Path
 from typing import Any
 
 from ..schemas import schema_errors
-from ..submission.results_io import ResultsFormatError, parse_results_text
+from ..submission.results_io import ResultsFormatError, parse_results_bytes
 from ..submission.sanitize import safe_slug
 from ..submission.validate import ValidationReport, is_submission_id, responses_fingerprint, validate_results
 from .entries import entry_from_results
 
 MAX_UPLOAD_BYTES = 32 * 1024 * 1024
-ALLOWED_SUFFIXES = (".json", ".jsonl")
+ALLOWED_SUFFIXES = (".json", ".jsonl", ".json.gz", ".jsonl.gz")
 
 
 @dataclass
@@ -77,13 +77,13 @@ class LeaderboardStore:
         to pick JSON vs JSONL parsing."""
         name = os.path.basename(filename or "").lower()
         if not name.endswith(ALLOWED_SUFFIXES):
-            return AddResult(False, None, ValidationReport(status="rejected", errors=["only .json and .jsonl files are accepted"]),
+            return AddResult(False, None, ValidationReport(status="rejected", errors=["only .json, .jsonl (optionally .gz) files are accepted"]),
                              "rejected: unsupported file type")
         if len(data) > MAX_UPLOAD_BYTES:
             return AddResult(False, None, ValidationReport(status="rejected", errors=["file too large"]), "rejected: too large")
         try:
-            doc = parse_results_text(data.decode("utf-8"), name)
-        except (ResultsFormatError, UnicodeDecodeError) as exc:
+            doc = parse_results_bytes(data, name)
+        except ResultsFormatError as exc:
             return AddResult(False, None, ValidationReport(status="rejected", errors=[str(exc)]), "rejected: unreadable")
         return self.add(doc, rescore=rescore)
 

@@ -236,6 +236,11 @@ def run_benchmark(
     model = {**adapter.describe(), **{k: v for k, v in (model_meta or {}).items() if v is not None}}
     model.setdefault("kind", getattr(adapter, "kind", "model"))
     manifest = bench.manifest or {}
+    if not bench.verify_unmodified():
+        # A grader or adapter mutated task data in memory. The pinned hash is
+        # still reported, but the run is not trustworthy: surface it loudly.
+        print("warning: task data was modified in memory during the run (grader bug); "
+              "results may not be reproducible", file=sys.stderr)
     doc = {
         "format": RESULT_FORMAT,
         "format_version": RESULT_FORMAT_VERSION,
