@@ -81,7 +81,11 @@ def submit_results(path: str | Path, *, repo: str | None = None, token_env: str 
         CommitOperationAdd(path_in_repo=f"entries/{sid}.json",
                            path_or_fileobj=json.dumps(entry, indent=2, ensure_ascii=False).encode("utf-8")),
     ]
-    info = api.create_commit(repo_id=repo, repo_type="dataset", operations=ops, create_pr=True,
-                             commit_message=f"Submission {sid}: {entry['model']['name']} on v{doc['benchmark_version']}",
-                             commit_description="Submitted with `rsostb submit`. Validation: " + report.status)
+    try:
+        info = api.create_commit(repo_id=repo, repo_type="dataset", operations=ops, create_pr=True,
+                                 commit_message=f"Submission {sid}: {entry['model']['name']} on v{doc['benchmark_version']}",
+                                 commit_description="Submitted with `rsostb submit`. Validation: " + report.status)
+    except Exception as exc:  # network / auth / permissions: the results were valid, the upload failed
+        raise SubmissionError(f"validated (submission id {sid}) but the upload to datasets/{repo} failed: "
+                              f"{type(exc).__name__}: {str(exc)[:300]}; retry, or use --to-dir") from exc
     return SubmitResult(True, sid, report, destination=getattr(info, "pr_url", None) or str(info), entry=entry)

@@ -48,9 +48,13 @@ def publish_dataset(out_dir: str | Path = "dataset", *, repo: str = DEFAULT_DATA
         print(f"(dry run) would upload {len(files)} files from {out_dir} to datasets/{repo}")
         return 0
     api = _api(token_env)
-    api.create_repo(repo, repo_type="dataset", exist_ok=True)
-    api.upload_folder(folder_path=str(out_dir), repo_id=repo, repo_type="dataset",
-                      commit_message=f"Sync RSOSTBTEST-pro dataset (hash {bench.dataset_hash[:12]})")
+    try:
+        api.create_repo(repo, repo_type="dataset", exist_ok=True)
+        api.upload_folder(folder_path=str(out_dir), repo_id=repo, repo_type="dataset",
+                          commit_message=f"Sync RSOSTBTEST-pro dataset (hash {bench.dataset_hash[:12]})")
+    except Exception as exc:
+        print(f"upload to datasets/{repo} failed: {type(exc).__name__}: {str(exc)[:300]}")
+        return 1
     print(f"published {len(files)} files to https://huggingface.co/datasets/{repo}")
     return 0
 
@@ -87,10 +91,14 @@ def publish_space(repo_root: str | Path = ".", *, repo: str = DEFAULT_SPACE_REPO
             print(f"(dry run) would upload {n} files to spaces/{repo}")
             return 0
         api = _api(token_env)
-        api.create_repo(repo, repo_type="space", space_sdk="gradio", exist_ok=True)
-        api.upload_folder(folder_path=str(path), repo_id=repo, repo_type="space",
-                          commit_message="Sync RSOSTBTEST-pro Space from GitHub",
-                          delete_patterns=["src/**", "benchmark/**"])
+        try:
+            api.create_repo(repo, repo_type="space", space_sdk="gradio", exist_ok=True)
+            api.upload_folder(folder_path=str(path), repo_id=repo, repo_type="space",
+                              commit_message="Sync RSOSTBTEST-pro Space from GitHub",
+                              delete_patterns=["src/**", "benchmark/**", "seed/**"])
+        except Exception as exc:
+            print(f"upload to spaces/{repo} failed: {type(exc).__name__}: {str(exc)[:300]}")
+            return 1
         print(f"published {n} files to https://huggingface.co/spaces/{repo}")
         return 0
     finally:

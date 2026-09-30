@@ -117,8 +117,14 @@ def cmd_download(args) -> int:
         print(out.red("pip install 'rsostbtest-pro[hf]' to download from Hugging Face"))
         return 2
     target = Path(args.dest) if args.dest else cache_dir() / "hf-dataset"
-    path = snapshot_download(repo_id=args.repo, repo_type="dataset", revision=args.revision, local_dir=target,
-                             token=os.environ.get("HF_TOKEN"))
+    try:
+        path = snapshot_download(repo_id=args.repo, repo_type="dataset", revision=args.revision, local_dir=target,
+                                 token=os.environ.get("HF_TOKEN"))
+    except Exception as exc:  # network, auth, proxy, missing repo/revision: report, don't dump a traceback
+        print(out.red(f"could not download datasets/{args.repo}: {type(exc).__name__}: {str(exc)[:300]}"))
+        print(out.dim("Check your network/proxy and HF_TOKEN. The benchmark itself is bundled with the package, "
+                      "so `rsostb benchmark` works without downloading anything."))
+        return 1
     print(f"downloaded {args.repo} to {path}")
     print(out.dim("The runner uses the task definitions bundled with the package; the download is for inspection and "
                   "for pinning a dataset revision. Set RSOSTB_BENCHMARK_DIR to use a different benchmark tree."))
