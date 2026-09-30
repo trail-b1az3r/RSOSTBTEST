@@ -410,6 +410,22 @@ def cmd_dataset(args) -> int:
     return 2
 
 
+def cmd_space(args) -> int:
+    from ..hf.publish import DEFAULT_SPACE_REPO, publish_space, stage_space
+    from ..paths import repo_root
+
+    root = repo_root()
+    if root is None:
+        print(out.red("run this from a source checkout (the Space is assembled from hf/space, src and benchmark)"))
+        return 2
+    if args.space_cmd == "stage":
+        path = stage_space(root, args.out)
+        n = sum(1 for p in path.rglob("*") if p.is_file())
+        print(f"staged {n} files in {path}; try it with: cd {path} && python app.py")
+        return 0
+    return publish_space(root, repo=args.repo or DEFAULT_SPACE_REPO, dry_run=args.dry_run, token_env=args.token_env)
+
+
 def cmd_leaderboard(args) -> int:
     from ..leaderboard import LeaderboardStore, build_api
 
@@ -608,6 +624,16 @@ def build_parser() -> argparse.ArgumentParser:
     c.add_argument("--token-env", default="HF_TOKEN")
     c.add_argument("--dry-run", action="store_true")
     s.set_defaults(func=cmd_dataset)
+
+    s = sub.add_parser("space", help="Hugging Face Space tools")
+    ssub = s.add_subparsers(dest="space_cmd", required=True)
+    c = ssub.add_parser("stage", help="assemble the self-contained Space bundle locally")
+    c.add_argument("--out", default="build/space")
+    c = ssub.add_parser("publish", help="stage and upload the Space")
+    c.add_argument("--repo", default=None, help="Space repo id (default ray0rf1re/RSOSTBTEST-pro)")
+    c.add_argument("--token-env", default="HF_TOKEN")
+    c.add_argument("--dry-run", action="store_true")
+    s.set_defaults(func=cmd_space)
 
     s = sub.add_parser("leaderboard", help="build the leaderboard API file from stored submissions")
     s.add_argument("--store", default="hf/space/data")

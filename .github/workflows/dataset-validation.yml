@@ -1,0 +1,60 @@
+name: dataset-validation
+
+# The committed Hugging Face dataset (dataset/) must be exactly what
+# `rsostb dataset build` produces from benchmark/, must not contain private
+# tasks, and every record must satisfy the task schema.
+
+on:
+  push:
+    branches: [main, "claude/**"]
+    paths: ["benchmark/**", "dataset/**", "src/rsostb/datasets/**", ".github/workflows/dataset-validation.yml"]
+  pull_request:
+    paths: ["benchmark/**", "dataset/**", "src/rsostb/datasets/**"]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  dataset:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+      - run: pip install -e .
+
+      - name: dataset/ is up to date
+        run: rsostb dataset build --check
+
+      - name: No private tasks or markers leak into the public dataset
+        run: |
+          python - <<'EOF'
+          from pathlib import Path
+          from rsostb.datasets.build import check_no_private
+          files = {p.relative_to("dataset").as_posix(): p.read_text(encoding="utf-8")
+                   for p in Path("dataset").rglob("*") if p.is_file()}
+          check_no_private(files)
+          print(f"checked {len(files)} files")
+          EOF
+          test -z "$(git ls-files benchmark/private | grep -v README.md)"
+
+      - name: Records are well-formed and prompts carry no answers
+        run: |
+          python - <<'EOF'
+          import json
+          from pathlib import Path
+          n = 0
+          for p in sorted(Path("dataset/data/tasks").glob("*.jsonl")):
+              for line in p.read_text(encoding="utf-8").splitlines():
+                  rec = json.loads(line)
+                  assert "reference_answer" not in rec and "reference_solution" not in rec, rec["id"]
+                  n += 1
+          assert n >= 825, n
+          print(f"{n} task records OK")
+          EOF
+
+      - name: Publish dry run
+        run: rsostb dataset publish --dry-run

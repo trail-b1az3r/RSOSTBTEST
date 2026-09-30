@@ -1,0 +1,71 @@
+name: release
+
+# Tag vX.Y.Z to release. The tag must equal the runner version in
+# src/rsostb/version.py, the benchmark must validate, then the build is
+# attached to a GitHub Release. PyPI upload uses trusted publishing and only
+# runs when the repository variable PUBLISH_PYPI is "true".
+
+on:
+  push:
+    tags: ["v*.*.*"]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+      - run: pip install -e ".[dev]"
+      - name: Tag matches the package version
+        if: startsWith(github.ref, 'refs/tags/')
+        run: |
+          v=$(python -c "from rsostb.version import RUNNER_VERSION; print(RUNNER_VERSION)")
+          test "refs/tags/v$v" = "$GITHUB_REF" || { echo "tag $GITHUB_REF != v$v"; exit 1; }
+      - run: rsostb task lint
+      - run: rsostb version check
+      - run: rsostb dataset build --check
+      - run: rsostb selfcheck --sandbox process --require-execution --workers 4 --quiet
+      - run: python -m pytest -m "not space" -q
+
+  build:
+    needs: verify
+    uses: ./.github/workflows/build.yml
+
+  github-release:
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: dist
+          path: dist
+      - uses: softprops/action-gh-release@v2
+        if: startsWith(github.ref, 'refs/tags/')
+        with:
+          files: dist/*
+          generate_release_notes: true
+
+  pypi:
+    needs: build
+    if: startsWith(github.ref, 'refs/tags/') && vars.PUBLISH_PYPI == 'true'
+    runs-on: ubuntu-latest
+    environment: pypi
+    permissions:
+      id-token: write          # trusted publishing; no API token stored
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: dist
+          path: dist
+      - uses: pypa/gh-action-pypi-publish@release/v1
