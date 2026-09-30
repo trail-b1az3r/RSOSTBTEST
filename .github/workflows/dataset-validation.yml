@@ -39,7 +39,7 @@ jobs:
           check_no_private(files)
           print(f"checked {len(files)} files")
           EOF
-          test -z "$(git ls-files benchmark/private | grep -v README.md)"
+          python scripts/check_private_leaks.py
 
       - name: Records are well-formed and prompts carry no answers
         run: |
