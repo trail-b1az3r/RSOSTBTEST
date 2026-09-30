@@ -16,6 +16,7 @@ permissions:
 jobs:
   verify:
     runs-on: ubuntu-latest
+    timeout-minutes: 40
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -34,7 +35,7 @@ jobs:
       - run: rsostb version check
       - run: rsostb dataset build --check
       - run: rsostb selfcheck --sandbox process --require-execution --workers 4 --quiet
-      - run: python -m pytest -m "not space" -q
+      - run: python -m pytest -m "not space" -q --timeout=900
 
   build:
     needs: verify

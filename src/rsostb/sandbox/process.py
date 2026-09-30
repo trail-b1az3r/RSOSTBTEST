@@ -8,6 +8,12 @@ Layers, each best-effort and each recorded in the result:
 * rlimits: CPU seconds, address space, file size, open files, processes, no core dumps;
 * a private network namespace (``unshare(CLONE_NEWNET)``) when permitted;
 * when started as root, the child drops to ``nobody`` before exec;
+
+The rlimits, namespace and privilege drop are applied by a tiny launcher (a
+fresh single-threaded interpreter that then ``execv``s the real program), not
+by ``preexec_fn``: running Python code between ``fork`` and ``exec`` in a
+multi-threaded parent (the runner grades tasks on a thread pool) can deadlock
+the child before exec, which blocks the parent inside ``Popen`` forever.
 * stdout/stderr capped at ``max_output_bytes`` (the process is killed past it);
 * wall-clock timeout.
 
@@ -18,6 +24,7 @@ from __future__ import annotations
 
 import ctypes
 import ctypes.util
+import json
 import os
 import shutil
 import signal
@@ -34,11 +41,55 @@ _CLONE_NEWNET = 0x40000000
 _CLONE_NEWUSER = 0x10000000
 _NOBODY_UID = 65534
 _NOBODY_GID = 65534
+_LAUNCH_FAILED = 125
+
+# Runs as ``python -I -S -c _LAUNCHER <json config> -- <program> <args...>`` in
+# the fresh child process: it is single-threaded, so it can safely apply the
+# namespace, rlimits and privilege drop before exec'ing the real program. It
+# fails closed: if requested isolation cannot be applied, the program never runs.
+_LAUNCHER = r"""
+import json, os, resource, sys
+cfg = json.loads(sys.argv[1])
+argv = sys.argv[3:]
+def fail(msg):
+    sys.stderr.write("rsostb-sandbox: " + msg + "\n")
+    sys.stderr.flush()
+    os._exit(125)
+try:
+    if cfg["net"]:
+        import ctypes
+        try:
+            libc = ctypes.CDLL("libc.so.6", use_errno=True)
+        except OSError:
+            import ctypes.util
+            libc = ctypes.CDLL(ctypes.util.find_library("c"), use_errno=True)
+        flags = 0x40000000 if os.geteuid() == 0 else (0x10000000 | 0x40000000)
+        if libc.unshare(flags) != 0:
+            fail("could not enter a private network namespace")
+    for name, soft, hard in cfg["rlimits"]:
+        if hasattr(resource, name):
+            resource.setrlimit(getattr(resource, name), (soft, hard))
+    if cfg["drop"]:
+        os.setgroups([])
+        os.setgid(cfg["gid"])
+        os.setuid(cfg["uid"])
+except SystemExit:
+    raise
+except BaseException as exc:
+    fail("setup failed: %s: %s" % (type(exc).__name__, exc))
+try:
+    os.execv(argv[0], argv)
+except OSError as exc:
+    fail("exec failed: %s" % exc)
+"""
 
 
 def _libc():
-    name = ctypes.util.find_library("c")
-    return ctypes.CDLL(name, use_errno=True) if name else None
+    try:
+        return ctypes.CDLL("libc.so.6", use_errno=True)
+    except OSError:
+        name = ctypes.util.find_library("c")
+        return ctypes.CDLL(name, use_errno=True) if name else None
 
 
 def _unshare_net() -> bool:
@@ -53,18 +104,25 @@ def _unshare_net() -> bool:
 
 
 _NET_PROBE: bool | None = None
+_NET_PROBE_LOCK = threading.Lock()
 
 
 def network_isolation_supported() -> bool:
     """Probe once whether a child can enter a private network namespace."""
+    global _NET_PROBE
+    with _NET_PROBE_LOCK:
+        return _probe_network_isolation()
+
+
+def _probe_network_isolation() -> bool:
     global _NET_PROBE
     if _NET_PROBE is None:
         if not sys.platform.startswith("linux"):
             _NET_PROBE = False
         else:
             code = (
-                "import ctypes,ctypes.util,os,sys;"
-                "l=ctypes.CDLL(ctypes.util.find_library('c'),use_errno=True);"
+                "import ctypes,os,sys;"
+                "l=ctypes.CDLL('libc.so.6',use_errno=True);"
                 f"f={_CLONE_NEWNET} if os.geteuid()==0 else {_CLONE_NEWUSER | _CLONE_NEWNET};"
                 "sys.exit(0 if l.unshare(f)==0 else 1)"
             )
@@ -138,30 +196,17 @@ class ProcessSandbox(Sandbox):
             "rlimits": True,
         }
 
-    def _preexec(self, limits: SandboxLimits, isolate_net: bool):
-        import resource
-
+    def _launcher_config(self, limits: SandboxLimits, isolate_net: bool) -> str:
         mem = limits.memory_mb * 1024 * 1024
-        drop = self.drop_privileges
-
-        def fn() -> None:  # runs in the child between fork and exec
-            os.setsid()
-            if isolate_net:
-                _unshare_net()
-            resource.setrlimit(resource.RLIMIT_CPU, (limits.cpu_seconds, limits.cpu_seconds + 1))
-            if limits.limit_address_space:
-                resource.setrlimit(resource.RLIMIT_AS, (mem, mem))
-            resource.setrlimit(resource.RLIMIT_FSIZE, (limits.max_file_bytes, limits.max_file_bytes))
-            resource.setrlimit(resource.RLIMIT_NOFILE, (limits.max_open_files, limits.max_open_files))
-            resource.setrlimit(resource.RLIMIT_CORE, (0, 0))
-            if hasattr(resource, "RLIMIT_NPROC"):
-                resource.setrlimit(resource.RLIMIT_NPROC, (limits.max_processes, limits.max_processes))
-            if drop:
-                os.setgroups([])
-                os.setgid(_NOBODY_GID)
-                os.setuid(_NOBODY_UID)
-
-        return fn
+        rl = [["RLIMIT_CPU", limits.cpu_seconds, limits.cpu_seconds + 1],
+              ["RLIMIT_FSIZE", limits.max_file_bytes, limits.max_file_bytes],
+              ["RLIMIT_NOFILE", limits.max_open_files, limits.max_open_files],
+              ["RLIMIT_CORE", 0, 0],
+              ["RLIMIT_NPROC", limits.max_processes, limits.max_processes]]
+        if limits.limit_address_space:
+            rl.append(["RLIMIT_AS", mem, mem])
+        return json.dumps({"net": bool(isolate_net), "rlimits": rl, "drop": bool(self.drop_privileges),
+                           "uid": _NOBODY_UID, "gid": _NOBODY_GID})
 
     def run(
         self,
@@ -212,14 +257,15 @@ class ProcessSandbox(Sandbox):
                 "PYTHONIOENCODING": "utf-8",
             }
             start = time.monotonic()
+            launcher = [sys.executable, "-I", "-S", "-c", _LAUNCHER, self._launcher_config(limits, isolate_net), "--"]
             proc = subprocess.Popen(
-                cmd,
+                launcher + cmd,
                 cwd=workdir,
                 env=env,
                 stdin=subprocess.PIPE if stdin is not None else subprocess.DEVNULL,
                 stdout=subprocess.PIPE,
                 stderr=subprocess.PIPE,
-                preexec_fn=self._preexec(limits, isolate_net),
+                start_new_session=True,      # setsid() in C: fork-safe, and killpg reaches the whole tree
                 close_fds=True,
             )
             killed = threading.Event()
@@ -229,7 +275,10 @@ class ProcessSandbox(Sandbox):
                 try:
                     os.killpg(proc.pid, signal.SIGKILL)
                 except (ProcessLookupError, PermissionError):
-                    pass
+                    try:
+                        proc.kill()
+                    except OSError:
+                        pass
 
             out = _Capture(proc.stdout, limits.max_output_bytes, kill_tree)
             err = _Capture(proc.stderr, limits.max_output_bytes // 4, kill_tree)
@@ -247,7 +296,10 @@ class ProcessSandbox(Sandbox):
             except subprocess.TimeoutExpired:
                 timed_out = True
                 kill_tree()
-                proc.wait(timeout=5)
+                try:
+                    proc.wait(timeout=5)
+                except subprocess.TimeoutExpired:
+                    notes.append("unreaped")
             # Always reap anything the program left behind in its session.
             try:
                 os.killpg(proc.pid, signal.SIGKILL)
@@ -259,6 +311,8 @@ class ProcessSandbox(Sandbox):
             rc = proc.returncode
             if rc is not None and rc < 0 and -rc == signal.SIGXCPU:
                 notes.append("cpu-limit")
+            if rc == _LAUNCH_FAILED:
+                notes.append("sandbox-setup-failed")
             result = ExecResult(
                 returncode=rc,
                 stdout=out.text(),

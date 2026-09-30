@@ -40,6 +40,14 @@ recorded in the result:
 * when started as root, privileges are dropped to `nobody` before exec;
 * output caps and a wall-clock timeout.
 
+The session is created by `Popen(start_new_session=True)`; the namespace,
+rlimits and privilege drop are applied by a small launcher — a fresh,
+single-threaded interpreter that then `execv`s the real program — rather than
+by `preexec_fn`, because running Python code between `fork` and `exec` in the
+multi-threaded runner can deadlock the child and hang the parent in `Popen`.
+The launcher fails closed: if requested isolation cannot be applied, the
+program does not run (the job is marked `sandbox-setup-failed`).
+
 Python code additionally runs under an in-process audit hook that blocks
 networking, process creation, `ctypes` and writes outside the working
 directory. This backend is not a container; use Docker for large-scale

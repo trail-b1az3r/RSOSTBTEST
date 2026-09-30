@@ -124,3 +124,30 @@ def test_orbit_semantics_differ_from_python():
 def test_orbit_step_budget():
     res = run_orbit("while true { }\n", max_steps=10_000)
     assert res.budget_exceeded
+
+
+# --------------------------------------------------------------------------- concurrency (regression)
+
+def test_process_sandbox_never_runs_python_between_fork_and_exec():
+    """preexec_fn in a multi-threaded parent can deadlock the child before exec,
+    which blocks the parent inside Popen forever (seen in CI). The sandbox must
+    use start_new_session + the post-exec launcher instead."""
+    import inspect
+
+    from rsostb.sandbox import process
+
+    src = inspect.getsource(process.ProcessSandbox)
+    assert "preexec_fn" not in src
+    assert "start_new_session=True" in src
+
+
+def test_many_concurrent_sandbox_jobs(sandbox):
+    from concurrent.futures import ThreadPoolExecutor
+
+    def job(i):
+        run = run_python(sandbox, f"def f():\n    return {i} * 2\n", [{"id": "c", "expr": "f()"}], LIM)
+        return run.records["c"]["value"]
+
+    with ThreadPoolExecutor(max_workers=16) as pool:
+        values = list(pool.map(job, range(48)))
+    assert values == [i * 2 for i in range(48)]

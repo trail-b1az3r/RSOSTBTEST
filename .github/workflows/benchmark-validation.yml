@@ -62,7 +62,7 @@ jobs:
           done
 
       - name: Slow test suite
-        run: python -m pytest -m slow -q
+        run: python -m pytest -m slow -q --timeout=900
 
       - uses: actions/upload-artifact@v4
         if: always()
