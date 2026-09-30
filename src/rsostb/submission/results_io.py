@@ -42,8 +42,9 @@ def write_results(doc: dict[str, Any], path: str | Path) -> Path:
     p.parent.mkdir(parents=True, exist_ok=True)
     text = serialize_results(doc, p.name)
     if p.name.endswith(".gz"):
-        # mtime=0 keeps the compressed bytes reproducible for identical results.
-        with open(p, "wb") as raw, gzip.GzipFile(fileobj=raw, mode="wb", mtime=0) as gz:
+        # mtime=0 and an empty header name keep the compressed bytes identical
+        # for identical results, whatever the file is called.
+        with open(p, "wb") as raw, gzip.GzipFile(filename="", fileobj=raw, mode="wb", mtime=0) as gz:
             gz.write(text.encode("utf-8"))
     else:
         p.write_text(text, encoding="utf-8")

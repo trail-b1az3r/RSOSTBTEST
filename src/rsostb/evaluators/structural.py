@@ -134,7 +134,12 @@ def evaluate_structural(task, response: Response, ctx: EvalContext) -> EvalResul
         res.details["validator"] = detail
         parts.append((float(weights.get("validator", 1.0)), s))
     if not parts:
-        return invalid("task defines nothing to compare", event=False)
+        if "schema" not in ev:
+            return invalid("task defines nothing to compare", event=False)
+        # Schema-only task ("produce valid output for this schema"): the schema
+        # is the whole criterion rather than a gate on other checks.
+        res.credit = 0.0 if res.details.get("schema_errors") else 1.0
+        return res
     total = sum(w for w, _ in parts)
     res.credit = sum(w * s for w, s in parts) / total
     if res.details.get("schema_errors"):
