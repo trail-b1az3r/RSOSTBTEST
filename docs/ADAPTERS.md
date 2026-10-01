@@ -87,7 +87,7 @@ A non-zero exit status is recorded as an adapter error for that task.
 ## Local transformers models
 
 `hf-local` (alias `transformers`) loads a model with 🤗 transformers
-(`pip install "rsostbtest-pro[transformers]"`). Options: `revision`,
+(`pip install "RSOSTB[transformers]"`). Options: `revision`,
 `device_map` (default `auto`), `dtype`, `trust_remote_code` (default
 **false**).
 

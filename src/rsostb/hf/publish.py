@@ -26,7 +26,7 @@ def _api(token_env: str):
     try:
         from huggingface_hub import HfApi  # type: ignore
     except ImportError as exc:
-        raise SystemExit("pip install 'rsostbtest-pro[hf]' to publish") from exc
+        raise SystemExit("pip install 'RSOSTB[hf]' to publish") from exc
     return HfApi(token=token)
 
 

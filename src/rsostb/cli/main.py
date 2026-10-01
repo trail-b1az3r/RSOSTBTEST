@@ -114,7 +114,7 @@ def cmd_download(args) -> int:
     try:
         from huggingface_hub import snapshot_download  # type: ignore
     except ImportError:
-        print(out.red("pip install 'rsostbtest-pro[hf]' to download from Hugging Face"))
+        print(out.red("pip install 'RSOSTB[hf]' to download from Hugging Face"))
         return 2
     target = Path(args.dest) if args.dest else cache_dir() / "hf-dataset"
     try:

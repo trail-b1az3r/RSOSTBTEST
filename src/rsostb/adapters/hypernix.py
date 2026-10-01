@@ -15,7 +15,7 @@ HyperNix (https://github.com/trail-b1az3r/HyperNix-pip):
   records it, and ``backend=hypernix`` (or ``lmstudio``) requires it.
 * ``hypernix`` — an in-process HyperNix **oven** (``hypernix.old_oven`` or
   ``hypernix.neo_oven``) loaded from a Hugging Face repo id, a local snapshot,
-  or a brewed model folder. Requires ``pip install 'rsostbtest-pro[hypernix]'``.
+  or a brewed model folder. Requires ``pip install 'RSOSTB[hypernix]'``.
 
 See docs/HYPERNIX.md.
 """
@@ -187,7 +187,7 @@ class HyperNixOvenAdapter(ModelAdapter):
             else:
                 from hypernix import neo_oven as mod  # type: ignore
         except ImportError as exc:
-            raise AdapterError("the 'hypernix' adapter needs: pip install 'rsostbtest-pro[hypernix]'") from exc
+            raise AdapterError("the 'hypernix' adapter needs: pip install 'RSOSTB[hypernix]'") from exc
         if self.brewed:
             self._oven = mod.preheat_brewed(self.brewed, device=self.device, dtype=self.dtype)
         else:

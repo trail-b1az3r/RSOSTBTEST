@@ -13,7 +13,7 @@ name: release
 #
 # The PyPI trusted publisher must name: owner trail-b1az3r, repository
 # RSOSTBTEST, workflow release.yml, environment pypi (or the repository
-# variable PYPI_ENVIRONMENT, if set), project rsostbtest-pro.
+# variable PYPI_ENVIRONMENT, if set), project RSOSTB.
 
 on:
   push:
@@ -111,7 +111,8 @@ jobs:
       - name: The built files are this version
         run: |
           ls -l dist
-          stem=$(echo "$PACKAGE" | tr '-' '_')
+          # Built files use the normalized name: RSOSTB -> rsostb, a-b.c -> a_b_c
+          stem=$(echo "$PACKAGE" | tr '[:upper:]' '[:lower:]' | sed -E 's/[-_.]+/_/g')
           test -f "dist/${stem}-${VERSION}-py3-none-any.whl" || { echo "::error::no wheel for $PACKAGE $VERSION in dist/"; exit 1; }
           test -f "dist/${stem}-${VERSION}.tar.gz" || { echo "::error::no sdist for $PACKAGE $VERSION in dist/"; exit 1; }
           test "$(ls dist | wc -l)" -eq 2 || { echo "::error::unexpected files in dist/"; exit 1; }

@@ -73,7 +73,7 @@ def submit_results(path: str | Path, *, repo: str | None = None, token_env: str 
     try:
         from huggingface_hub import CommitOperationAdd, HfApi  # type: ignore
     except ImportError as exc:
-        raise SubmissionError("pip install 'rsostbtest-pro[hf]' to submit to Hugging Face") from exc
+        raise SubmissionError("pip install 'RSOSTB[hf]' to submit to Hugging Face") from exc
     repo = repo or os.environ.get("RSOSTB_RESULTS_REPO", DEFAULT_RESULTS_REPO)
     api = HfApi(token=token)
     ops = [

@@ -11,6 +11,10 @@
   the HyperNix change that lets T1 serve `/inference` from its own runner.
 
 ### Changed
+* **The PyPI distribution is named `RSOSTB`** (`pip install RSOSTB`,
+  extras as `RSOSTB[all]`), replacing `rsostbtest-pro`. The import package
+  and CLI stay `rsostb`, the benchmark stays RSOSTBTEST-pro, and results
+  record the runner as `RSOSTB <version>`.
 * **Release publishes to PyPI** via trusted publishing on every `vX.Y.Z`
   tag (no `PUBLISH_PYPI` switch): verify → build → check the files and that
   the version is new on PyPI → publish → install it back from PyPI and

@@ -2,7 +2,7 @@ name: build
 
 # Builds the sdist and wheel, checks the metadata, then installs the wheel in a
 # clean virtualenv *outside* the checkout and runs the benchmark from the
-# bundled data, proving `pip install rsostbtest-pro` works on its own.
+# bundled data, proving `pip install RSOSTB` works on its own.
 
 on:
   push:

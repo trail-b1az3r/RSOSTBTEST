@@ -68,7 +68,7 @@ Repository settings used:
 
 PyPI needs no token: the trusted publisher on PyPI must name owner
 `trail-b1az3r`, repository `RSOSTBTEST`, workflow `release.yml`,
-environment `pypi` (or `PYPI_ENVIRONMENT`), project `rsostbtest-pro`.
+environment `pypi` (or `PYPI_ENVIRONMENT`), project `RSOSTB`.
 
 ## Releasing
 

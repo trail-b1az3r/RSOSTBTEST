@@ -66,7 +66,7 @@ those replies are refused rather than assumed.
 ## 2. In-process ovens — `hypernix`
 
 Loads a HyperNix oven (`hypernix.neo_oven` by default, or `old_oven`) in the
-benchmark process (`pip install "rsostbtest-pro[hypernix]"`):
+benchmark process (`pip install "RSOSTB[hypernix]"`):
 
 ```bash
 rsostb benchmark --adapter hypernix --model ray0rf1re/hyper-nix.1 --output hn1.jsonl

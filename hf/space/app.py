@@ -383,7 +383,7 @@ produces a new, non-comparable score version.
 
 **Run it yourself**
 ```bash
-pip install rsostbtest-pro            # or: pip install -e ".[all]" from the repo
+pip install RSOSTB                    # or: pip install -e ".[all]" from the repo
 rsostb benchmark --adapter openai-compatible --model my-model --base-url http://localhost:8000/v1 \\
     --output results.jsonl
 rsostb validate results.jsonl --rescore

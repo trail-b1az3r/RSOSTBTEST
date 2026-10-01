@@ -55,7 +55,7 @@ def hardware() -> list[str]:
 
 
 def software(extra: dict[str, str | None] | None = None) -> list[str]:
-    items = [f"rsostbtest-pro {RUNNER_VERSION}", f"Python {platform.python_version()}",
+    items = [f"RSOSTB {RUNNER_VERSION}", f"Python {platform.python_version()}",
              f"{platform.system()} {platform.release()}"]
     for name, cmd in (("g++", ["g++", "--version"]), ("node", ["node", "--version"])):
         v = _first_line(cmd)
