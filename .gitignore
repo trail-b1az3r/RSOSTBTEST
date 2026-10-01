@@ -1,0 +1,41 @@
+# Private / hidden evaluation tasks must never be committed.
+benchmark/private/*
+!benchmark/private/README.md
+
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.eggs/
+build/
+dist/
+.venv/
+venv/
+.pytest_cache/
+.ruff_cache/
+.coverage
+coverage.xml
+htmlcov/
+
+# Runner artefacts
+*.partial
+results.json
+results.jsonl
+/report/
+/reports/
+leaderboard.json
+.rsostb/
+
+# Secrets
+.env
+*.token
+hf_token*
+
+# Editors / OS
+.idea/
+.vscode/
+.DS_Store
+
+# Space local store
+hf/space/data/
+hf/space/seed/

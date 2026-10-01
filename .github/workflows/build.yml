@@ -1,0 +1,47 @@
+name: build
+
+# Builds the sdist and wheel, checks the metadata, then installs the wheel in a
+# clean virtualenv *outside* the checkout and runs the benchmark from the
+# bundled data, proving `pip install rsostbtest-pro` works on its own.
+
+on:
+  push:
+    branches: [main, "claude/**"]
+  pull_request:
+  workflow_dispatch:
+  workflow_call:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install "build>=1.2" "twine>=5"
+      - run: python -m build
+      - run: twine check --strict dist/*
+
+      - name: Smoke-test the wheel outside the source tree
+        run: |
+          python -m venv "$RUNNER_TEMP/venv"
+          . "$RUNNER_TEMP/venv/bin/activate"
+          pip install dist/*.whl
+          cd "$RUNNER_TEMP"
+          rsostb --version
+          rsostb info
+          python -m rsostb list --category math | head -5
+          rsostb benchmark --adapter noisy-oracle --model wheel-smoke --categories math,trigonometry \
+            --limit-per-category 5 --sandbox process --output smoke.jsonl --quiet
+          rsostb validate smoke.jsonl --rescore
+          python -c "import rsostb, pathlib; p = pathlib.Path(rsostb.__file__).parent / '_bundled' / 'benchmark'; assert (p / 'configs' / 'benchmark.yaml').is_file(); assert not (p / 'private').exists()"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: dist
+          path: dist/

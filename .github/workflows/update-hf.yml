@@ -1,0 +1,65 @@
+name: update-hf
+
+# Syncs the Hugging Face dataset and Space from main. Everything is validated
+# first; nothing is uploaded unless every check passes. Requires the
+# repository secret HF_TOKEN (a write token for the target repos). Without it
+# the job runs the checks and a dry run only.
+
+on:
+  push:
+    branches: [main]
+    paths: ["benchmark/**", "dataset/**", "hf/**", "src/**", "examples/results/**"]
+  workflow_dispatch:
+    inputs:
+      target:
+        description: "What to publish"
+        type: choice
+        options: [both, dataset, space]
+        default: both
+
+permissions:
+  contents: read
+
+concurrency:
+  group: update-hf
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    env:
+      HF_TOKEN: ${{ secrets.HF_TOKEN }}
+      TARGET: ${{ github.event.inputs.target || 'both' }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+      - run: pip install -e ".[dev,hf]"
+
+      - name: Validate before publishing
+        run: |
+          rsostb task lint
+          rsostb version check
+          rsostb dataset build --check
+          rsostb selfcheck --sandbox process --require-execution --workers 4 --quiet
+
+      - name: Dry run (no HF_TOKEN configured)
+        if: env.HF_TOKEN == ''
+        run: |
+          rsostb dataset publish --dry-run
+          rsostb space publish --dry-run
+          echo "::notice::HF_TOKEN secret not set; skipped upload."
+
+      - name: Publish dataset
+        if: env.HF_TOKEN != '' && (env.TARGET == 'both' || env.TARGET == 'dataset')
+        run: rsostb dataset publish
+
+      - name: Publish Space
+        if: env.HF_TOKEN != '' && (env.TARGET == 'both' || env.TARGET == 'space')
+        run: rsostb space publish

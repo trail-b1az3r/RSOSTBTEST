@@ -1,0 +1,9 @@
+# The rsostb package and the benchmark data are bundled next to app.py by
+# `rsostb`'s publish_space (see docs/HF_SPACE.md), so the Space always runs the
+# exact validated code from the GitHub commit it was built from.
+gradio>=5.0,<6
+pandas>=2.0
+plotly>=5.18
+PyYAML>=6.0
+jsonschema>=4.18
+huggingface_hub>=0.24
