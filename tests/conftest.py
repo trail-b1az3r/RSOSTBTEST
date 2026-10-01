@@ -90,8 +90,13 @@ class _MockHandler(BaseHTTPRequestHandler):
         self.wfile.write(body)
 
     def do_GET(self):  # noqa: N802
+        type(self).seen.append({"path": self.path, "method": "GET", "auth": self.headers.get("Authorization")})
         if self.path.rstrip("/").endswith("/status"):
             return self._send(200, {"ok": True, "version": "mock"})
+        if self.path.rstrip("/").endswith("/inference/backends") and "backends" in type(self).replies:
+            rows = type(self).replies["backends"]
+            default = next((r["name"] for r in rows if r.get("reachable")), "")
+            return self._send(200, {"backends": rows, "default": default, "request_id": "mock"})
         self._send(404, {"error": "not found"})
 
     def do_POST(self):  # noqa: N802
@@ -105,9 +110,13 @@ class _MockHandler(BaseHTTPRequestHandler):
                 {"message": {"role": "assistant", "content": reply}, "finish_reason": "stop"}],
                 "usage": {"prompt_tokens": 3, "completion_tokens": 2}})
         if self.path.endswith("/inference/chat"):
-            return self._send(200, {"model": type(self).replies.get("served_model", req.get("model")),
-                                    "content": reply, "substituted": type(self).replies.get("substituted", False),
-                                    "input_tokens": 3, "output_tokens": 2, "finish_reason": "stop"})
+            out = {"model": type(self).replies.get("served_model", req.get("model")),
+                   "content": reply, "substituted": type(self).replies.get("substituted", False),
+                   "input_tokens": 3, "output_tokens": 2, "finish_reason": "stop",
+                   "backend": "http://127.0.0.1:8781"}
+            if "backend_name" in type(self).replies:   # absent = a server that predates the field
+                out["backend_name"] = type(self).replies["backend_name"]
+            return self._send(200, out)
         if self.path.endswith("/v1/messages"):
             return self._send(200, {"model": req.get("model"), "content": [{"type": "text", "text": reply}],
                                     "stop_reason": "end_turn", "usage": {"input_tokens": 3, "output_tokens": 2}})

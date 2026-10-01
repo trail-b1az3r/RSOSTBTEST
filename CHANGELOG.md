@@ -1,5 +1,20 @@
 # Changelog
 
+## Unreleased
+
+### Added
+* `hypernix-t1` adapter: records which T1 backend answered each task
+  (`usage.backend_name`: `hypernix` for the server's own runner, `lmstudio`),
+  and `--adapter-option backend=hypernix|lmstudio` requires one — checked
+  once against `GET /inference/backends` before the run, then on every
+  reply; servers that predate `backend_name` cannot satisfy it. Pairs with
+  the HyperNix change that lets T1 serve `/inference` from its own runner.
+
+### Fixed
+* `rsostb download`, `submit` and `space`/`dataset publish` report Hub
+  network, auth and permission failures in one line with a non-zero exit
+  instead of a traceback.
+
 ## 1.0.0 — 2026-09-30
 
 First release: benchmark **1.0**, dataset **1.0.0**, scoring **v1**, runner **1.0.0**.

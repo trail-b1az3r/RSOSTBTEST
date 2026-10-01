@@ -9,7 +9,10 @@ HyperNix (https://github.com/trail-b1az3r/HyperNix-pip):
   used instead (mTLS, retries, key sealing). Fallback down the plan's cascade
   is always disabled (``allow_fallback: false``) and a response that reports
   a substituted model is treated as an error, so results always describe the
-  model that was asked for.
+  model that was asked for. T1 serves ``/inference`` from one of two
+  backends — ``hypernix`` (the server's own runner, for the model it has
+  loaded) or ``lmstudio`` — and names it in ``backend_name``; every task
+  records it, and ``backend=hypernix`` (or ``lmstudio``) requires it.
 * ``hypernix`` — an in-process HyperNix **oven** (``hypernix.old_oven`` or
   ``hypernix.neo_oven``) loaded from a Hugging Face repo id, a local snapshot,
   or a brewed model folder. Requires ``pip install 'rsostbtest-pro[hypernix]'``.
@@ -26,6 +29,8 @@ from .base import AdapterError, Generation, ModelAdapter, env_secret, http_json,
 
 DEFAULT_T1_URL = "http://127.0.0.1:8000"
 KEY_ENV_VARS = ("RSOSTB_HYPERNIX_T1_KEY", "HYPERNIX_T1_KEY", "T1_KEY")
+#: The backends a T1 server can answer /inference from (``backend_name``).
+T1_BACKENDS = ("hypernix", "lmstudio")
 
 
 def hypernix_version() -> str | None:
@@ -41,8 +46,17 @@ class HyperNixT1Adapter(ModelAdapter):
     name = "hypernix-t1"
 
     def __init__(self, model: str | None = None, *, base_url: str | None = None, api_key_env: str | None = None,
-                 timeout: float = 300.0, retries: int = 2, use_sdk: bool | None = None, **options: Any) -> None:
+                 timeout: float = 300.0, retries: int = 2, use_sdk: bool | None = None,
+                 backend: str | None = None, **options: Any) -> None:
         super().__init__(model, **options)
+        backend = (backend or "").strip().lower() or None
+        if backend in ("any", "auto"):
+            backend = None
+        if backend is not None and backend not in T1_BACKENDS:
+            raise AdapterError(f"backend must be one of {', '.join(T1_BACKENDS)} (or omitted); got {backend!r}")
+        #: When set, every answer must come from this T1 backend.
+        self.backend = backend
+        self._preflight_done = False
         self.base_url = (base_url or os.environ.get("HYPERNIX_T1_URL") or DEFAULT_T1_URL).rstrip("/")
         self.api_key_env = api_key_env or next((k for k in KEY_ENV_VARS if os.environ.get(k)), KEY_ENV_VARS[1])
         self.timeout, self.retries = timeout, retries
@@ -68,7 +82,45 @@ class HyperNixT1Adapter(ModelAdapter):
         headers = {"Authorization": f"Bearer {key}"} if key else {}
         return http_json(self.base_url + path, body, headers, timeout=self.timeout, retries=self.retries)
 
+    def _get(self, path: str) -> dict[str, Any]:
+        if self._client is not None:
+            try:
+                return self._client.call("GET", path, auth=True)
+            except Exception as exc:
+                raise AdapterError(f"T1 {path} failed: {exc}") from exc
+        key = env_secret(self.api_key_env)
+        headers = {"Authorization": f"Bearer {key}"} if key else {}
+        return http_json(self.base_url + path, None, headers, timeout=min(self.timeout, 30.0), retries=0, method="GET")
+
+    def backends(self) -> list[dict[str, Any]]:
+        """``GET /inference/backends``: what the server can answer from, probed."""
+        return list((self._get("/inference/backends") or {}).get("backends") or [])
+
+    def _preflight(self) -> None:
+        """With ``backend`` required, fail once and clearly before a run
+        turns every task into the same error. Older servers without the
+        listing are checked per reply instead."""
+        self._preflight_done = True
+        if self.backend is None:
+            return
+        try:
+            rows = self.backends()
+        except AdapterError:
+            return
+        row = next((r for r in rows if r.get("name") == self.backend), None)
+        if row is None:
+            raise AdapterError(f"T1 server at {self.base_url} does not offer the {self.backend!r} backend "
+                               f"(it lists: {', '.join(r.get('name', '?') for r in rows) or 'nothing'}); "
+                               "it may predate the HyperNix runner backend")
+        if not row.get("reachable"):
+            raise AdapterError(f"T1 backend {self.backend!r} is not answering: {row.get('detail') or 'unreachable'}")
+        if self.backend == "hypernix" and row.get("model_id") and row["model_id"] != self.model:
+            raise AdapterError(f"the T1 HyperNix runner is serving {row['model_id']!r}, not {self.model!r}; "
+                               f"load it with POST /runner/load before benchmarking")
+
     def chat(self, messages, **kwargs):
+        if not self._preflight_done:
+            self._preflight()
         s = sampling(kwargs)
         body: dict[str, Any] = {"model": self.model, "messages": messages, "allow_fallback": False}
         for k in ("temperature", "max_tokens", "top_p", "stop"):
@@ -78,8 +130,14 @@ class HyperNixT1Adapter(ModelAdapter):
         data = self._post("/inference/chat", body)
         if data.get("substituted"):
             raise AdapterError(f"T1 server substituted {data.get('model')!r} for {self.model!r}; refusing to score it")
+        backend_name = data.get("backend_name") or None
+        if self.backend is not None and backend_name != self.backend:
+            served = backend_name or "an unnamed backend (the server predates backend_name)"
+            raise AdapterError(f"T1 answered from {served}, but backend={self.backend!r} was required; "
+                               "refusing to score it")
         usage = {"input_tokens": data.get("input_tokens"), "output_tokens": data.get("output_tokens"),
-                 "cost": data.get("cost"), "currency": data.get("currency"), "backend": data.get("backend")}
+                 "cost": data.get("cost"), "currency": data.get("currency"), "backend": data.get("backend"),
+                 "backend_name": backend_name}
         return Generation(text=str(data.get("content", "")), latency=time.monotonic() - t0, usage=usage,
                           model=data.get("model"), finish_reason=data.get("finish_reason"))
 
@@ -96,7 +154,8 @@ class HyperNixT1Adapter(ModelAdapter):
 
     def describe(self):
         st = self.server_status()
-        return {"name": self.model, "adapter": self.name, "kind": "model", "provider": "HyperNix T1",
+        provider = "HyperNix T1" + (f" ({self.backend} backend)" if self.backend else "")
+        return {"name": self.model, "adapter": self.name, "kind": "model", "provider": provider,
                 "version": st.get("t1_api_version") or st.get("version")}
 
 

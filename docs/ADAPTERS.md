@@ -93,8 +93,9 @@ A non-zero exit status is recorded as an adapter error for that task.
 
 ## HyperNix
 
-`hypernix-t1` (T1 API governed inference) and `hypernix` (in-process ovens);
-see [HYPERNIX.md](HYPERNIX.md).
+`hypernix-t1` (T1 API governed inference, answered by the server's own
+HyperNix runner or LM Studio — `--adapter-option backend=hypernix` requires
+the runner) and `hypernix` (in-process ovens); see [HYPERNIX.md](HYPERNIX.md).
 
 ## Baselines and references
 

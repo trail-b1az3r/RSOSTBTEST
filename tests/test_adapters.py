@@ -63,6 +63,70 @@ def test_hypernix_t1_refuses_substituted_model(mock_server):
         a.chat(MSGS)
 
 
+# --------------------------------------------------------------------------- HyperNix T1 backends
+
+RUNNER_ROW = {"name": "hypernix", "kind": "hypernix-runner", "reachable": True,
+              "detail": "serving t1-small", "address": "http://127.0.0.1:8781", "model_id": "t1-small"}
+LMSTUDIO_ROW = {"name": "lmstudio", "kind": "openai-compatible", "reachable": True, "detail": "answered"}
+
+
+def test_hypernix_t1_records_which_backend_answered(mock_server):
+    url, handler = mock_server
+    handler.replies.update({"text": "hi", "backend_name": "hypernix"})
+    g = create_adapter("hypernix-t1", "t1-small", base_url=url).chat(MSGS)
+    assert g.usage["backend_name"] == "hypernix"
+    assert g.usage["backend"] == "http://127.0.0.1:8781"
+
+
+def test_hypernix_t1_backend_requirement_is_met(mock_server):
+    url, handler = mock_server
+    handler.replies.update({"backend_name": "hypernix", "backends": [LMSTUDIO_ROW, RUNNER_ROW]})
+    a = create_adapter("hypernix-t1", "t1-small", base_url=url, backend="hypernix")
+    assert a.chat(MSGS).usage["backend_name"] == "hypernix"
+    assert "hypernix backend" in a.describe()["provider"]
+
+
+def test_hypernix_t1_refuses_an_answer_from_another_backend(mock_server):
+    url, handler = mock_server
+    handler.replies.update({"backend_name": "lmstudio", "backends": [LMSTUDIO_ROW, RUNNER_ROW]})
+    a = create_adapter("hypernix-t1", "t1-small", base_url=url, backend="hypernix")
+    with pytest.raises(AdapterError, match="answered from lmstudio"):
+        a.chat(MSGS)
+
+
+def test_hypernix_t1_requirement_fails_closed_on_an_older_server(mock_server):
+    """No /inference/backends and no backend_name: the requirement cannot
+    be verified, so nothing is scored."""
+    url, handler = mock_server
+    a = create_adapter("hypernix-t1", "t1-small", base_url=url, backend="hypernix")
+    with pytest.raises(AdapterError, match="predates backend_name"):
+        a.chat(MSGS)
+
+
+def test_hypernix_t1_preflight_catches_the_wrong_loaded_model(mock_server):
+    url, handler = mock_server
+    handler.replies.update({"backend_name": "hypernix",
+                            "backends": [LMSTUDIO_ROW, {**RUNNER_ROW, "model_id": "other-model"}]})
+    a = create_adapter("hypernix-t1", "t1-small", base_url=url, backend="hypernix")
+    with pytest.raises(AdapterError, match="serving 'other-model'.*runner/load"):
+        a.chat(MSGS)
+    assert not any(r["path"].endswith("/inference/chat") for r in handler.seen)
+
+
+def test_hypernix_t1_preflight_catches_an_idle_runner(mock_server):
+    url, handler = mock_server
+    idle = {**RUNNER_ROW, "reachable": False, "model_id": "", "detail": "nothing loaded"}
+    handler.replies.update({"backends": [LMSTUDIO_ROW, idle]})
+    a = create_adapter("hypernix-t1", "t1-small", base_url=url, backend="hypernix")
+    with pytest.raises(AdapterError, match="not answering: nothing loaded"):
+        a.chat(MSGS)
+
+
+def test_hypernix_t1_rejects_an_unknown_backend_option():
+    with pytest.raises(AdapterError, match="backend must be one of"):
+        create_adapter("hypernix-t1", "t1-small", backend="vllm")
+
+
 def test_command_adapter_text_and_json():
     probe = "import sys, json; d = sys.stdin.read(); print('PING' if 'ping' in d else 'MISSING')"
     a = create_adapter("command", "probe", command=[sys.executable, "-c", probe])
