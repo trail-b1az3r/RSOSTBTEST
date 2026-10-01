@@ -12,7 +12,7 @@ HINTS = {
 }
 GRADIO_402 = ("Hugging Face needs a paid plan (PRO, or Team/Enterprise for an organization) to create Gradio or "
               "Docker Spaces; static Spaces are free for every account. Publish the static Space instead: "
-              "`rsostb space publish --sdk static` (the default).")
+              "`rsostb space publish --sdk static`.")
 
 
 def hub_status(exc: BaseException) -> int | None:

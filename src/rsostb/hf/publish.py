@@ -4,10 +4,11 @@ Tokens are read from an environment variable (``HF_TOKEN`` by default; in
 GitHub Actions it comes from repository secrets). Nothing is published unless
 the local checks pass first.
 
-The Space comes in two kinds (``sdk``): ``static`` (default), the leaderboard
+The Space comes in two kinds (``sdk``): ``static``, the leaderboard
 pre-computed into one page, which any Hugging Face account can host; and
 ``gradio``, the interactive app with in-Space uploads, which Hugging Face only
-lets paid plans create.
+lets paid plans create. ``auto`` (the default for publishing) keeps the kind
+of an existing Space and makes a new Space static.
 """
 from __future__ import annotations
 
@@ -29,6 +30,22 @@ SPACE_IGNORE = shutil.ignore_patterns("__pycache__", "*.pyc", ".DS_Store", "priv
 # and absent from the new bundle are deleted, so switching kinds leaves no
 # stale app behind; anything else in the Space repo is left alone.
 SPACE_MANAGED = ["app.py", "requirements.txt", "index.html", "leaderboard.json", "src/**", "benchmark/**", "seed/**"]
+
+
+def _space_api(token_env: str):
+    """A Hub client for read-only look-ups (dry runs): the token if set, else anonymous."""
+    try:
+        from huggingface_hub import HfApi  # type: ignore
+    except ImportError:
+        return None
+    return HfApi(token=os.environ.get(token_env) or None)
+
+
+def existing_space_sdk(api, repo: str) -> str | None:
+    """The SDK of ``spaces/<repo>``, or None if there is no such Space."""
+    if not api.repo_exists(repo, repo_type="space"):
+        return None
+    return getattr(api.space_info(repo), "sdk", None) or "unknown"
 
 
 def _api(token_env: str):
@@ -102,8 +119,27 @@ def stage_space(repo_root: str | Path, dest: str | Path, *, sdk: str = "static",
     return dest
 
 
-def publish_space(repo_root: str | Path = ".", *, repo: str = DEFAULT_SPACE_REPO, sdk: str = "static",
+def publish_space(repo_root: str | Path = ".", *, repo: str = DEFAULT_SPACE_REPO, sdk: str = "auto",
                   results_repo: str | None = None, dry_run: bool = False, token_env: str = "HF_TOKEN") -> int:
+    if sdk not in ("auto", *SPACE_SDKS):
+        raise ValueError(f"unknown Space SDK {sdk!r}; use auto, {', '.join(SPACE_SDKS)}")
+    api = _space_api(token_env) if dry_run else _api(token_env)
+    existing = None
+    if api is not None:
+        try:
+            existing = existing_space_sdk(api, repo)
+        except Exception as exc:
+            print(f"could not look up spaces/{repo}: {hub_error(exc)}")
+            if hint := hub_hint(exc):
+                print(hint)
+            if not dry_run:
+                return 1
+    if sdk == "auto":
+        if existing not in (None, *SPACE_SDKS):
+            print(f"spaces/{repo} is a {existing} Space; choose --sdk static or --sdk gradio to replace it")
+            return 1
+        sdk = existing or "static"
+        print(f"Space SDK: {sdk} ({'kept from the existing Space' if existing else 'a new Space is static'})")
     staging = Path(tempfile.mkdtemp(prefix="rsostb-space-"))
     try:
         path = stage_space(repo_root, staging / "space", sdk=sdk, results_repo=results_repo,
@@ -112,11 +148,10 @@ def publish_space(repo_root: str | Path = ".", *, repo: str = DEFAULT_SPACE_REPO
         if dry_run:
             print(f"(dry run) would upload {n} files to spaces/{repo} ({sdk} Space)")
             return 0
-        api = _api(token_env)
         try:
             # Creating is only attempted for a new Space: it is the step that
             # needs a paid plan for Gradio, and an existing Space never needs it.
-            if not api.repo_exists(repo, repo_type="space"):
+            if existing is None:
                 api.create_repo(repo, repo_type="space", space_sdk=sdk)
             api.upload_folder(folder_path=str(path), repo_id=repo, repo_type="space",
                               commit_message=f"Sync RSOSTBTEST-pro Space ({sdk}) from GitHub",

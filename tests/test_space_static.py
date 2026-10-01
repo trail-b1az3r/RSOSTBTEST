@@ -4,6 +4,7 @@ from __future__ import annotations
 import json
 import re
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 
@@ -108,11 +109,14 @@ PAYMENT = ("Static Spaces are free for everyone. Gradio and Docker Spaces run on
 
 
 class FakeApi:
-    def __init__(self, exists: bool = False, create_error: Exception | None = None) -> None:
-        self.exists, self.create_error, self.calls = exists, create_error, []
+    def __init__(self, sdk: str | None = None, create_error: Exception | None = None) -> None:
+        self.sdk, self.create_error, self.calls = sdk, create_error, []  # sdk None: no such Space
 
     def repo_exists(self, repo, repo_type):
-        return self.exists
+        return self.sdk is not None
+
+    def space_info(self, repo):
+        return SimpleNamespace(sdk=self.sdk)
 
     def create_repo(self, repo, **kw):
         self.calls.append(("create_repo", kw))
@@ -155,21 +159,37 @@ def test_publish_gradio_space_needs_a_paid_plan(monkeypatch, capsys, quick_stage
     assert [c[0] for c in api.calls] == ["create_repo"]
 
 
-def test_publish_static_space(monkeypatch, capsys, quick_stage):
+def test_publish_new_space_is_static(monkeypatch, capsys, quick_stage):
     api = FakeApi()
     monkeypatch.setattr(publish, "_api", lambda token_env: api)
     assert publish.publish_space(ROOT, repo="me/space") == 0
     (_, create), (_, upload) = api.calls
     assert create == {"repo_type": "space", "space_sdk": "static"}
     assert upload["delete_patterns"] == publish.SPACE_MANAGED and api.files == ["index.html"]
-    assert "(static Space)" in capsys.readouterr().out
+    out = capsys.readouterr().out
+    assert "a new Space is static" in out and "(static Space)" in out
 
 
-def test_publish_to_an_existing_space_never_creates(monkeypatch, quick_stage):
-    api = FakeApi(exists=True, create_error=AssertionError("create_repo must not be called"))
+def test_publish_keeps_an_existing_spaces_kind_and_never_creates(monkeypatch, capsys, quick_stage):
+    api = FakeApi(sdk="gradio", create_error=AssertionError("create_repo must not be called"))
     monkeypatch.setattr(publish, "_api", lambda token_env: api)
-    assert publish.publish_space(ROOT, repo="me/space", sdk="gradio") == 0
-    assert [c[0] for c in api.calls] == ["upload_folder"]
+    assert publish.publish_space(ROOT, repo="me/space") == 0
+    assert [c[0] for c in api.calls] == ["upload_folder"] and api.files == ["app.py"]
+    assert "kept from the existing Space" in capsys.readouterr().out
+
+
+def test_publish_switches_kind_only_when_asked(monkeypatch, quick_stage):
+    api = FakeApi(sdk="gradio")
+    monkeypatch.setattr(publish, "_api", lambda token_env: api)
+    assert publish.publish_space(ROOT, repo="me/space", sdk="static") == 0
+    assert [c[0] for c in api.calls] == ["upload_folder"] and api.files == ["index.html"]
+
+
+def test_publish_leaves_a_docker_space_alone(monkeypatch, capsys, quick_stage):
+    api = FakeApi(sdk="docker")
+    monkeypatch.setattr(publish, "_api", lambda token_env: api)
+    assert publish.publish_space(ROOT, repo="me/space") == 1
+    assert api.calls == [] and "is a docker Space" in capsys.readouterr().out
 
 
 def test_space_cli(tmp_path, capsys, monkeypatch):
@@ -183,9 +203,12 @@ def test_space_cli(tmp_path, capsys, monkeypatch):
         return Path(dest)
 
     monkeypatch.setattr(publish, "stage_space", stage)
+    monkeypatch.setattr(publish, "_space_api", lambda token_env: None)  # no Hub look-up in tests
     monkeypatch.setenv("RSOSTB_RESULTS_REPO", "org/results")
     assert main(["space", "stage", "--out", str(tmp_path / "s")]) == 0
     assert seen["sdk"] == "static" and seen["results_repo"] == "org/results"
     assert main(["space", "publish", "--dry-run", "--sdk", "gradio", "--results-repo", ""]) == 0
     assert seen["sdk"] == "gradio" and seen["results_repo"] is None
     assert "(dry run) would upload 0 files" in capsys.readouterr().out
+    assert main(["space", "publish", "--dry-run"]) == 0
+    assert seen["sdk"] == "static" and "a new Space is static" in capsys.readouterr().out

@@ -10,10 +10,11 @@ name: update-hf
 # event payload and are readable by anyone who can read this repository.
 # Without a token the job runs the checks and a dry run only.
 #
-# The Space is static by default: the leaderboard pre-built into one page,
-# which every Hugging Face account can host. A Gradio Space (interactive, with
-# in-Space uploads) needs a paid Hugging Face plan to create; choose it with
-# the space_sdk input or the HF_SPACE_SDK repository variable.
+# Space kind: an existing Space keeps its kind (static or Gradio); a new Space
+# is static, the leaderboard pre-built into one page, which every Hugging Face
+# account can host. A Gradio Space (interactive, with in-Space uploads) needs a
+# paid Hugging Face plan to create. Force a kind with the space_sdk input or
+# the HF_SPACE_SDK repository variable (switching kinds replaces the app).
 # The static page lists the submissions merged into the results dataset
 # (repository variable RSOSTB_RESULTS_REPO, default
 # ray0rf1re/RSOSTBTEST-pro-results), so a daily run rebuilds the Space to
@@ -45,10 +46,10 @@ on:
         type: string
         default: ray0rf1re/RSOSTBTEST-pro
       space_sdk:
-        description: "Space type: static (free on every HF account) or gradio (needs a paid HF plan to create); default = HF_SPACE_SDK variable, else static"
+        description: "Space kind: auto = HF_SPACE_SDK variable, else keep the existing Space's kind (a new Space is static); static is free on every HF account; gradio needs a paid HF plan to create"
         type: choice
-        options: [default, static, gradio]
-        default: default
+        options: [auto, static, gradio]
+        default: auto
       dry_run:
         description: "Validate and show what would be uploaded, without uploading"
         type: boolean
@@ -72,7 +73,7 @@ jobs:
       TARGET: ${{ inputs.target || (github.event_name == 'schedule' && 'space') || 'both' }}
       DATASET_REPO: ${{ inputs.dataset_repo || 'ray0rf1re/RSOSTBTEST-pro' }}
       SPACE_REPO: ${{ inputs.space_repo || 'ray0rf1re/RSOSTBTEST-pro' }}
-      SPACE_SDK: ${{ (inputs.space_sdk && inputs.space_sdk != 'default') && inputs.space_sdk || vars.HF_SPACE_SDK || 'static' }}
+      SPACE_SDK: ${{ (inputs.space_sdk && inputs.space_sdk != 'auto') && inputs.space_sdk || vars.HF_SPACE_SDK || 'auto' }}
       RSOSTB_RESULTS_REPO: ${{ vars.RSOSTB_RESULTS_REPO }}
       DRY_RUN: ${{ inputs.dry_run && 'true' || 'false' }}
     steps:
@@ -89,8 +90,8 @@ jobs:
       - name: Plan
         run: |
           case "$SPACE_SDK" in
-            static|gradio) ;;
-            *) echo "::error::Space SDK '$SPACE_SDK' (from HF_SPACE_SDK) must be static or gradio"; exit 1 ;;
+            auto|static|gradio) ;;
+            *) echo "::error::Space SDK '$SPACE_SDK' (from HF_SPACE_SDK) must be auto, static or gradio"; exit 1 ;;
           esac
           echo "### update-hf: **$TARGET** · Space \`$SPACE_REPO\` (**$SPACE_SDK**) · dataset \`$DATASET_REPO\`" >> "$GITHUB_STEP_SUMMARY"
 

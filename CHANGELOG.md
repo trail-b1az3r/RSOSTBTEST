@@ -3,18 +3,18 @@
 ## Unreleased
 
 ### Added
-* **Static leaderboard Space, now the default.** Hugging Face only lets paid
-  plans create Gradio and Docker Spaces (the `update-hf` run failed with
+* **Static leaderboard Space.** Hugging Face only lets paid plans create
+  Gradio and Docker Spaces (the `update-hf` run failed with
   `402 Payment Required` creating the Space); static Spaces are free on every
-  account. `rsostb space stage|publish` now builds the leaderboard into one
-  page (`hf/static/`, plus `leaderboard.json`) with the same tabs: leaderboard,
-  model details, compare, tasks (prompt-side only) and how to submit.
-  Entries are the full results files merged into the results dataset and the
-  bundled baselines, each re-validated and re-scored at build time. The
-  Gradio app stays available with `--sdk gradio`. `update-hf` takes a
-  `space_sdk` input (or the `HF_SPACE_SDK` variable), reads
-  `RSOSTB_RESULTS_REPO`, and rebuilds the Space daily; an unchanged
-  leaderboard commits nothing.
+  account. `rsostb space stage|publish --sdk static` builds the leaderboard
+  into one page (`hf/static/`, plus `leaderboard.json`) with the same tabs:
+  leaderboard, model details, compare, tasks (prompt-side only) and how to
+  submit. Entries are the full results files merged into the results dataset
+  and the bundled baselines, each re-validated and re-scored at build time.
+  `rsostb space publish` defaults to `--sdk auto`: an existing Space keeps its
+  kind, a new one is static. `update-hf` takes a `space_sdk` input (or the
+  `HF_SPACE_SDK` variable), reads `RSOSTB_RESULTS_REPO`, and rebuilds the
+  Space daily; an unchanged leaderboard commits nothing.
 * `hypernix-t1` adapter: records which T1 backend answered each task
   (`usage.backend_name`: `hypernix` for the server's own runner, `lmstudio`),
   and `--adapter-option backend=hypernix|lmstudio` requires one — checked
@@ -41,6 +41,10 @@
   anything uploads. New inputs `dataset_repo`, `space_repo` and `dry_run`.
 
 ### Fixed
+* The Gradio Space crashed at start-up (`IndexError` in `app.py`): a deployed
+  Space runs `/app/app.py`, one directory below the root, and the app looked
+  two directories up for a source checkout. It also falls back to a temporary
+  store when the app directory is read-only.
 * `rsostb download`, `submit` and `space`/`dataset publish` report Hub
   network, auth and permission failures in one line with a non-zero exit
   instead of a traceback, and keep the Hub's own explanation in full (it was

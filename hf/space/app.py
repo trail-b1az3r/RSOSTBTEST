@@ -20,12 +20,17 @@ import html
 import logging
 import os
 import sys
+import tempfile
 import threading
 from pathlib import Path
 from typing import Any
 
 HERE = Path(__file__).resolve().parent
-for _cand in (HERE / "src", HERE.parents[1] / "src"):
+# The checkout root when run as hf/space/app.py. A deployed Space runs from a
+# top-level directory (/app/app.py), where this is just "/": `.parent` stops at
+# the root, while indexing `.parents` would raise.
+CHECKOUT = HERE.parent.parent
+for _cand in (HERE / "src", CHECKOUT / "src"):
     if (_cand / "rsostb").is_dir():
         if str(_cand) not in sys.path:
             sys.path.insert(0, str(_cand))
@@ -56,7 +61,12 @@ def _store_dir() -> Path:
     data = Path("/data")
     if data.is_dir() and os.access(data, os.W_OK):
         return data / "rsostb-store"
-    return HERE / "data" / "store"
+    local = HERE / "data" / "store"
+    try:
+        local.mkdir(parents=True, exist_ok=True)
+        return local
+    except OSError:  # a read-only app directory
+        return Path(tempfile.gettempdir()) / "rsostb-store"
 
 
 BENCH = load_benchmark()
@@ -115,7 +125,7 @@ def seed_examples() -> int:
     if STORE.entries():
         return 0
     added = 0
-    for d in (HERE / "seed", HERE.parents[1] / "examples" / "results"):
+    for d in (HERE / "seed", CHECKOUT / "examples" / "results"):
         if not d.is_dir():
             continue
         for p in sorted(d.glob("*.json*")):

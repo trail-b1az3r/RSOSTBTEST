@@ -643,18 +643,19 @@ def build_parser() -> argparse.ArgumentParser:
 
     s = sub.add_parser("space", help="Hugging Face Space tools")
     ssub = s.add_subparsers(dest="space_cmd", required=True)
-    sdk_help = ("static (default): the leaderboard as one pre-built page, free on every Hugging Face account; "
+    sdk_help = ("static: the leaderboard as one pre-built page, free on every Hugging Face account; "
                 "gradio: the interactive app with uploads, which needs a paid Hugging Face plan to create")
     results_help = ("results dataset whose merged submissions the static board lists "
                     "(default $RSOSTB_RESULTS_REPO, else ray0rf1re/RSOSTBTEST-pro-results; '' for baselines only)")
     c = ssub.add_parser("stage", help="assemble the self-contained Space bundle locally")
     c.add_argument("--out", default="build/space")
-    c.add_argument("--sdk", choices=("static", "gradio"), default="static", help=sdk_help)
+    c.add_argument("--sdk", choices=("static", "gradio"), default="static", help=sdk_help + " (default static)")
     c.add_argument("--results-repo", default=None, help=results_help)
     c.add_argument("--token-env", default="HF_TOKEN", help="token for a private results dataset (optional)")
     c = ssub.add_parser("publish", help="stage and upload the Space")
     c.add_argument("--repo", default=None, help="Space repo id (default ray0rf1re/RSOSTBTEST-pro)")
-    c.add_argument("--sdk", choices=("static", "gradio"), default="static", help=sdk_help)
+    c.add_argument("--sdk", choices=("auto", "static", "gradio"), default="auto",
+                   help=sdk_help + "; auto (default): keep the existing Space's kind, static for a new Space")
     c.add_argument("--results-repo", default=None, help=results_help)
     c.add_argument("--token-env", default="HF_TOKEN")
     c.add_argument("--dry-run", action="store_true")

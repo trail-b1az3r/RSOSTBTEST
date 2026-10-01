@@ -66,7 +66,7 @@ Repository settings used:
 | `HF_TOKEN` (or `HF_API_KEY`, or any secret named in the run's `token_secret` input) | secret | `update-hf` — a Hugging Face **write** token |
 | `pypi` | environment | `release` — must match the environment on the PyPI trusted publisher |
 | `PYPI_ENVIRONMENT` | variable (optional) | `release` — use a different environment name |
-| `HF_SPACE_SDK` | variable (optional) | `update-hf` — `static` (default) or `gradio` |
+| `HF_SPACE_SDK` | variable (optional) | `update-hf` — `auto` (default: keep the existing Space's kind, a new Space is static), `static` or `gradio` |
 | `RSOSTB_RESULTS_REPO` | variable (optional) | `update-hf` — results dataset the static Space lists (default `ray0rf1re/RSOSTBTEST-pro-results`) |
 
 PyPI needs no token: the trusted publisher on PyPI must name owner

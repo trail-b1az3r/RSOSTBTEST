@@ -3,16 +3,20 @@
 The leaderboard Space comes in two kinds, built from the same `rsostb`
 package and the same data:
 
-| | **static** (default) | **gradio** |
+| | **static** | **gradio** |
 |---|---|---|
 | What it is | the leaderboard pre-built into one page ([`hf/static/`](../hf/static/)) | the interactive app ([`hf/space/app.py`](../hf/space/app.py)) |
 | Hugging Face plan | free on every account | a paid plan (PRO, or Team/Enterprise for an organization) to **create** it |
 | Submissions | `rsostb submit` opens a pull request on the results dataset; merged runs are listed at the next rebuild | uploaded in the **Submit** tab and validated in the Space |
 
 Hugging Face now only lets paid plans create Gradio and Docker Spaces; static
-Spaces are free for everyone. On a free account, publishing a Gradio Space
+Spaces are free for everyone. On a free account, creating a Gradio Space
 fails with `402 Payment Required`, and `rsostb` says so and points to
-`--sdk static`.
+`--sdk static`. Updating a Gradio Space that already exists needs no plan.
+
+`rsostb space publish` keeps the kind of an existing Space and makes a new
+Space static (`--sdk auto`, the default); `--sdk static` or `--sdk gradio`
+forces a kind.
 
 Both have the same tabs:
 
@@ -62,6 +66,9 @@ python hf/space/app.py                     # http://127.0.0.1:7860
 rsostb space stage --sdk gradio --out build/space   # the bundle: app, package, benchmark, seed runs
 ```
 
+The bundle runs from any directory, including the top-level `/app` a
+deployed Space uses.
+
 With no configuration it uses a local store (`hf/space/data/store`,
 git-ignored) seeded with the baseline runs in `examples/results/`.
 
@@ -69,7 +76,7 @@ git-ignored) seeded with the baseline runs in `examples/results/`.
 
 ```bash
 rsostb space publish --dry-run
-HF_TOKEN=hf_... rsostb space publish                 # static; default repo: spaces/ray0rf1re/RSOSTBTEST-pro
+HF_TOKEN=hf_... rsostb space publish                 # existing Space: same kind; new Space: static
 HF_TOKEN=hf_... rsostb space publish --sdk gradio    # needs a paid plan if the Space does not exist yet
 ```
 
@@ -94,7 +101,7 @@ read-only, and warns if a target repo is outside the token's user and orgs.
 
 | Variable | Default | Meaning |
 |---|---|---|
-| `HF_SPACE_SDK` | `static` | `static` or `gradio` |
+| `HF_SPACE_SDK` | `auto` | `auto` (keep the existing Space's kind; a new Space is static), `static` or `gradio` |
 | `RSOSTB_RESULTS_REPO` | `ray0rf1re/RSOSTBTEST-pro-results` | results dataset the static Space lists |
 
 **Manual runs** (**Actions → update-hf → Run workflow**) take:
@@ -105,7 +112,7 @@ read-only, and warns if a target repo is outside the token's user and orgs.
 | `token_secret` | `HF_TOKEN` | the *name* of the secret holding the token |
 | `dataset_repo` | `ray0rf1re/RSOSTBTEST-pro` | dataset to publish to |
 | `space_repo` | `ray0rf1re/RSOSTBTEST-pro` | Space to publish to |
-| `space_sdk` | `default` | `static` or `gradio`; `default` uses `HF_SPACE_SDK`, else `static` |
+| `space_sdk` | `auto` | `static` or `gradio`; `auto` uses `HF_SPACE_SDK`, else keeps the existing Space's kind (a new Space is static) |
 | `dry_run` | off | validate and list what would be uploaded, upload nothing |
 
 `token_secret` takes a secret's name, never the token itself: workflow
