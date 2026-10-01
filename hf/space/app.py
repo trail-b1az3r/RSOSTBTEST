@@ -24,7 +24,6 @@ import tempfile
 import threading
 from pathlib import Path
 from typing import Any
-@spaces.GPU
 HERE = Path(__file__).resolve().parent
 # The checkout root when run as hf/space/app.py. A deployed Space runs from a
 # top-level directory (/app/app.py), where this is just "/": `.parent` stops at
