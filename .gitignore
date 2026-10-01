@@ -39,3 +39,6 @@ hf_token*
 # Space local store
 hf/space/data/
 hf/space/seed/
+
+# benchmake output
+bench-runs/

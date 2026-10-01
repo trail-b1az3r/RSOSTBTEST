@@ -64,6 +64,7 @@ all = ["RSOSTB[coding,godot,hf,space,dev]"]
 
 [project.scripts]
 rsostb = "rsostb.cli.main:main"
+benchmake = "rsostb.benchmake:main"
 
 [project.urls]
 Homepage = "https://github.com/trail-b1az3r/RSOSTBTEST"

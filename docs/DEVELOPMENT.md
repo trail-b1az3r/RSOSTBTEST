@@ -45,6 +45,7 @@ src/rsostb/
   leaderboard/ store.py entries.py api.py
   reports/    builder.py markdown.py html.py
   hf/         publish.py static_space.py (the static Space) errors.py (Hub failure reports)
+  benchmake.py  the `benchmake -M` multi-model runner (t1, multilama, gguf, hnx_llama, cactus)
   integrations/hypernix.py  versioning.py  cli/
 ```
 
