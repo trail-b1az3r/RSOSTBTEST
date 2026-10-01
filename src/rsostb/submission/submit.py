@@ -86,6 +86,8 @@ def submit_results(path: str | Path, *, repo: str | None = None, token_env: str 
                                  commit_message=f"Submission {sid}: {entry['model']['name']} on v{doc['benchmark_version']}",
                                  commit_description="Submitted with `rsostb submit`. Validation: " + report.status)
     except Exception as exc:  # network / auth / permissions: the results were valid, the upload failed
+        from ..hf.errors import hub_error
+
         raise SubmissionError(f"validated (submission id {sid}) but the upload to datasets/{repo} failed: "
-                              f"{type(exc).__name__}: {str(exc)[:300]}; retry, or use --to-dir") from exc
+                              f"{hub_error(exc)}; retry, or use --to-dir") from exc
     return SubmitResult(True, sid, report, destination=getattr(info, "pr_url", None) or str(info), entry=entry)

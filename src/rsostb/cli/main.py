@@ -121,7 +121,9 @@ def cmd_download(args) -> int:
         path = snapshot_download(repo_id=args.repo, repo_type="dataset", revision=args.revision, local_dir=target,
                                  token=os.environ.get("HF_TOKEN"))
     except Exception as exc:  # network, auth, proxy, missing repo/revision: report, don't dump a traceback
-        print(out.red(f"could not download datasets/{args.repo}: {type(exc).__name__}: {str(exc)[:300]}"))
+        from ..hf.errors import hub_error
+
+        print(out.red(f"could not download datasets/{args.repo}: {hub_error(exc)}"))
         print(out.dim("Check your network/proxy and HF_TOKEN. The benchmark itself is bundled with the package, "
                       "so `rsostb benchmark` works without downloading anything."))
         return 1
@@ -419,17 +421,25 @@ def cmd_dataset(args) -> int:
 def cmd_space(args) -> int:
     from ..hf.publish import DEFAULT_SPACE_REPO, publish_space, stage_space
     from ..paths import repo_root
+    from ..submission.submit import DEFAULT_RESULTS_REPO
 
     root = repo_root()
     if root is None:
-        print(out.red("run this from a source checkout (the Space is assembled from hf/space, src and benchmark)"))
+        print(out.red("run this from a source checkout (the Space is assembled from hf/, src and benchmark)"))
         return 2
+    # The static board lists what was merged into the results dataset; "" or "none" lists the baselines only.
+    results = args.results_repo if args.results_repo is not None else (
+        os.environ.get("RSOSTB_RESULTS_REPO") or DEFAULT_RESULTS_REPO)
+    results = None if results.strip().lower() in ("", "none") else results.strip()
     if args.space_cmd == "stage":
-        path = stage_space(root, args.out)
+        path = stage_space(root, args.out, sdk=args.sdk, results_repo=results,
+                           token=os.environ.get(args.token_env) or None)
         n = sum(1 for p in path.rglob("*") if p.is_file())
-        print(f"staged {n} files in {path}; try it with: cd {path} && python app.py")
+        try_it = f"open {path / 'index.html'} in a browser" if args.sdk == "static" else f"cd {path} && python app.py"
+        print(f"staged {n} files in {path}; try it with: {try_it}")
         return 0
-    return publish_space(root, repo=args.repo or DEFAULT_SPACE_REPO, dry_run=args.dry_run, token_env=args.token_env)
+    return publish_space(root, repo=args.repo or DEFAULT_SPACE_REPO, sdk=args.sdk, results_repo=results,
+                         dry_run=args.dry_run, token_env=args.token_env)
 
 
 def cmd_leaderboard(args) -> int:
@@ -633,10 +643,20 @@ def build_parser() -> argparse.ArgumentParser:
 
     s = sub.add_parser("space", help="Hugging Face Space tools")
     ssub = s.add_subparsers(dest="space_cmd", required=True)
+    sdk_help = ("static: the leaderboard as one pre-built page, free on every Hugging Face account; "
+                "gradio: the interactive app with uploads, which needs a paid Hugging Face plan to create")
+    results_help = ("results dataset whose merged submissions the static board lists "
+                    "(default $RSOSTB_RESULTS_REPO, else ray0rf1re/RSOSTBTEST-pro-results; '' for baselines only)")
     c = ssub.add_parser("stage", help="assemble the self-contained Space bundle locally")
     c.add_argument("--out", default="build/space")
+    c.add_argument("--sdk", choices=("static", "gradio"), default="static", help=sdk_help + " (default static)")
+    c.add_argument("--results-repo", default=None, help=results_help)
+    c.add_argument("--token-env", default="HF_TOKEN", help="token for a private results dataset (optional)")
     c = ssub.add_parser("publish", help="stage and upload the Space")
     c.add_argument("--repo", default=None, help="Space repo id (default ray0rf1re/RSOSTBTEST-pro)")
+    c.add_argument("--sdk", choices=("auto", "static", "gradio"), default="auto",
+                   help=sdk_help + "; auto (default): keep the existing Space's kind, static for a new Space")
+    c.add_argument("--results-repo", default=None, help=results_help)
     c.add_argument("--token-env", default="HF_TOKEN")
     c.add_argument("--dry-run", action="store_true")
     s.set_defaults(func=cmd_space)

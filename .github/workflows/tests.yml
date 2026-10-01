@@ -64,6 +64,6 @@ jobs:
         run: python -m pytest -m space -q
       - name: Staged Space bundle imports standalone
         run: |
-          rsostb space stage --out build/space
+          rsostb space stage --sdk gradio --out build/space
           cd build/space
           RSOSTB_STORE_DIR="$RUNNER_TEMP/store" PYTHONPATH= python -c "import app; print(len(app.STORE.entries()), 'seed entries')"

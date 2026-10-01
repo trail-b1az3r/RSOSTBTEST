@@ -30,6 +30,15 @@ def app(tmp_path_factory):
     return mod
 
 
+def test_space_app_starts_from_a_top_level_directory(tmp_path, monkeypatch):
+    """A deployed Space runs /app/app.py: there is one directory above it, not two."""
+    monkeypatch.setenv("RSOSTB_STORE_DIR", str(tmp_path / "store"))
+    source = (ROOT / "hf" / "space" / "app.py").read_text(encoding="utf-8")
+    module = {"__file__": "/rsostb-no-such-dir/app.py", "__name__": "space_app_at_top_level"}
+    exec(compile(source, module["__file__"], "exec"), module)  # noqa: S102 - our own app, at a fake path
+    assert module["CHECKOUT"] == Path("/") and module["demo"] is not None
+
+
 def test_space_seeds_baselines_but_not_oracle(app):
     entries = app.STORE.entries()
     assert len(entries) >= 4
