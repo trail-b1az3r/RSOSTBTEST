@@ -3,6 +3,10 @@
 RSOSTBTEST-pro benchmarks models served or trained with
 [HyperNix](https://github.com/trail-b1az3r/HyperNix-pip) in three ways.
 
+To benchmark several HyperNix models at once — T1 models, multilama and
+local GGUFs, and sub-bit GGUFs on the patched llama.cpp — use
+[`benchmake -M`](BENCHMAKE.md).
+
 ## 1. T1 API servers — `hypernix-t1`
 
 Talks to a HyperNix **T1 API** server's governed inference endpoint,

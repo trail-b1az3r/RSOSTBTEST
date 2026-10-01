@@ -3,6 +3,16 @@
 ## Unreleased
 
 ### Added
+* **`benchmake -M "model1,model2 model3"`** (also `scripts/benchmake.py`):
+  benchmarks several models in one go, each on the backend its name implies
+  — `t1` (HyperNix T1), `multilama` (`org/repo:file.gguf`), `gguf` (local
+  file, via HyperNix `ggufrun`), `hnx_llama` (HyperNix's patched llama.cpp,
+  for GGUFs with HyperNix types) and `cactus` (`Cactus-Compute/...`, run
+  with `cactus serve`, cloud handoff and telemetry off) — or the one named
+  with a `backend[@variant]:` prefix. Commas and spaces separate models;
+  underscores are part of a name. Servers it starts are stopped after their
+  model; a model that fails to load or answer a ping is skipped; a summary
+  ranks the rest. See `docs/BENCHMAKE.md`.
 * **Static leaderboard Space.** Hugging Face only lets paid plans create
   Gradio and Docker Spaces (the `update-hf` run failed with
   `402 Payment Required` creating the Space); static Spaces are free on every
