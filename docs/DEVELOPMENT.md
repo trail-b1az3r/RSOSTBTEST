@@ -44,7 +44,8 @@ src/rsostb/
   submission/ results_io.py validate.py sanitize.py submit.py
   leaderboard/ store.py entries.py api.py
   reports/    builder.py markdown.py html.py
-  hf/publish.py  integrations/hypernix.py  versioning.py  cli/
+  hf/         publish.py static_space.py (the static Space) errors.py (Hub failure reports)
+  integrations/hypernix.py  versioning.py  cli/
 ```
 
 ## CI workflows (`.github/workflows/`)
@@ -56,7 +57,7 @@ src/rsostb/
 | `dataset-validation.yml` | changes to benchmark/dataset | `dataset build --check`, private-leak scan, answer-free prompt records, publish dry run |
 | `build.yml` | push, PR, called by release | sdist + wheel, `twine check`, install the wheel in a clean venv outside the checkout and run a benchmark from the bundled data |
 | `release.yml` | tag `vX.Y.Z`, manual | tag = package version, full verification, build, publish to PyPI (trusted publishing), install it back from PyPI, GitHub Release; manual `validate` mode does all of it except the upload |
-| `update-hf.yml` | push to main, manual | validate, then publish the dataset and Space (HF token from a repository secret; dry run without one) |
+| `update-hf.yml` | push to main, daily, manual | validate, then publish the dataset and Space (HF token from a repository secret; dry run without one); the daily run rebuilds only the Space, to list newly merged submissions |
 
 Repository settings used:
 
@@ -65,6 +66,8 @@ Repository settings used:
 | `HF_TOKEN` (or `HF_API_KEY`, or any secret named in the run's `token_secret` input) | secret | `update-hf` — a Hugging Face **write** token |
 | `pypi` | environment | `release` — must match the environment on the PyPI trusted publisher |
 | `PYPI_ENVIRONMENT` | variable (optional) | `release` — use a different environment name |
+| `HF_SPACE_SDK` | variable (optional) | `update-hf` — `static` (default) or `gradio` |
+| `RSOSTB_RESULTS_REPO` | variable (optional) | `update-hf` — results dataset the static Space lists (default `ray0rf1re/RSOSTBTEST-pro-results`) |
 
 PyPI needs no token: the trusted publisher on PyPI must name owner
 `trail-b1az3r`, repository `RSOSTBTEST`, workflow `release.yml`,

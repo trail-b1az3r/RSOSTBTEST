@@ -9,11 +9,22 @@ name: update-hf
 # secret, never the token itself: workflow inputs are stored in the run's
 # event payload and are readable by anyone who can read this repository.
 # Without a token the job runs the checks and a dry run only.
+#
+# The Space is static by default: the leaderboard pre-built into one page,
+# which every Hugging Face account can host. A Gradio Space (interactive, with
+# in-Space uploads) needs a paid Hugging Face plan to create; choose it with
+# the space_sdk input or the HF_SPACE_SDK repository variable.
+# The static page lists the submissions merged into the results dataset
+# (repository variable RSOSTB_RESULTS_REPO, default
+# ray0rf1re/RSOSTBTEST-pro-results), so a daily run rebuilds the Space to
+# pick them up; when nothing changed, nothing is committed.
 
 on:
   push:
     branches: [main]
     paths: ["benchmark/**", "dataset/**", "hf/**", "src/**", "examples/results/**"]
+  schedule:
+    - cron: "37 4 * * *"   # daily: list newly merged submissions (Space only)
   workflow_dispatch:
     inputs:
       target:
@@ -33,6 +44,11 @@ on:
         description: "Space repo id to publish to"
         type: string
         default: ray0rf1re/RSOSTBTEST-pro
+      space_sdk:
+        description: "Space type: static (free on every HF account) or gradio (needs a paid HF plan to create); default = HF_SPACE_SDK variable, else static"
+        type: choice
+        options: [default, static, gradio]
+        default: default
       dry_run:
         description: "Validate and show what would be uploaded, without uploading"
         type: boolean
@@ -53,9 +69,11 @@ jobs:
       # The named secret, else HF_API_KEY. GitHub masks secret values in logs.
       HF_TOKEN: ${{ secrets[inputs.token_secret || 'HF_TOKEN'] || secrets.HF_API_KEY }}
       TOKEN_SOURCE: ${{ secrets[inputs.token_secret || 'HF_TOKEN'] != '' && (inputs.token_secret || 'HF_TOKEN') || (secrets.HF_API_KEY != '' && 'HF_API_KEY' || '') }}
-      TARGET: ${{ inputs.target || 'both' }}
+      TARGET: ${{ inputs.target || (github.event_name == 'schedule' && 'space') || 'both' }}
       DATASET_REPO: ${{ inputs.dataset_repo || 'ray0rf1re/RSOSTBTEST-pro' }}
       SPACE_REPO: ${{ inputs.space_repo || 'ray0rf1re/RSOSTBTEST-pro' }}
+      SPACE_SDK: ${{ (inputs.space_sdk && inputs.space_sdk != 'default') && inputs.space_sdk || vars.HF_SPACE_SDK || 'static' }}
+      RSOSTB_RESULTS_REPO: ${{ vars.RSOSTB_RESULTS_REPO }}
       DRY_RUN: ${{ inputs.dry_run && 'true' || 'false' }}
     steps:
       - uses: actions/checkout@v4
@@ -67,6 +85,14 @@ jobs:
         with:
           node-version: "20"
       - run: pip install -e ".[dev,hf]"
+
+      - name: Plan
+        run: |
+          case "$SPACE_SDK" in
+            static|gradio) ;;
+            *) echo "::error::Space SDK '$SPACE_SDK' (from HF_SPACE_SDK) must be static or gradio"; exit 1 ;;
+          esac
+          echo "### update-hf: **$TARGET** · Space \`$SPACE_REPO\` (**$SPACE_SDK**) · dataset \`$DATASET_REPO\`" >> "$GITHUB_STEP_SUMMARY"
 
       - name: Validate before publishing
         run: |
@@ -109,7 +135,7 @@ jobs:
         if: env.HF_TOKEN == '' || env.DRY_RUN == 'true'
         run: |
           rsostb dataset publish --repo "$DATASET_REPO" --dry-run
-          rsostb space publish --repo "$SPACE_REPO" --dry-run
+          rsostb space publish --repo "$SPACE_REPO" --sdk "$SPACE_SDK" --dry-run
           if [ -z "$HF_TOKEN" ]; then
             echo "::notice::No Hugging Face token (secret HF_TOKEN or HF_API_KEY, or the secret named in token_secret); skipped upload."
           fi
@@ -120,4 +146,4 @@ jobs:
 
       - name: Publish Space
         if: env.HF_TOKEN != '' && env.DRY_RUN != 'true' && (env.TARGET == 'both' || env.TARGET == 'space')
-        run: rsostb space publish --repo "$SPACE_REPO"
+        run: rsostb space publish --repo "$SPACE_REPO" --sdk "$SPACE_SDK"

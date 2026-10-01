@@ -93,9 +93,11 @@ rsostb submit results.jsonl --to-dir ../RSOSTBTEST-pro-results   # store locally
 ```
 
 The results dataset defaults to `ray0rf1re/RSOSTBTEST-pro-results`
-(override with `--repo` or `$RSOSTB_RESULTS_REPO`). Alternatively upload the
-file in the **Submit** tab of the [Space](HF_SPACE.md), which runs the same
-validation (`--rescore`) before listing it.
+(override with `--repo` or `$RSOSTB_RESULTS_REPO`). Once a maintainer merges
+the pull request, the run appears on the [Space](HF_SPACE.md) at its next
+rebuild (daily), which validates and re-scores every listed run again. A
+Gradio Space, if one is deployed, also takes uploads in its **Submit** tab,
+with the same validation (`--rescore`).
 
 What is stored: the validated results file (including responses, needed for
 re-grading and audits) and a leaderboard entry with scores and metadata. The

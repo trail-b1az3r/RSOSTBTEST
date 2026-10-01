@@ -3,6 +3,18 @@
 ## Unreleased
 
 ### Added
+* **Static leaderboard Space, now the default.** Hugging Face only lets paid
+  plans create Gradio and Docker Spaces (the `update-hf` run failed with
+  `402 Payment Required` creating the Space); static Spaces are free on every
+  account. `rsostb space stage|publish` now builds the leaderboard into one
+  page (`hf/static/`, plus `leaderboard.json`) with the same tabs: leaderboard,
+  model details, compare, tasks (prompt-side only) and how to submit.
+  Entries are the full results files merged into the results dataset and the
+  bundled baselines, each re-validated and re-scored at build time. The
+  Gradio app stays available with `--sdk gradio`. `update-hf` takes a
+  `space_sdk` input (or the `HF_SPACE_SDK` variable), reads
+  `RSOSTB_RESULTS_REPO`, and rebuilds the Space daily; an unchanged
+  leaderboard commits nothing.
 * `hypernix-t1` adapter: records which T1 backend answered each task
   (`usage.backend_name`: `hypernix` for the server's own runner, `lmstudio`),
   and `--adapter-option backend=hypernix|lmstudio` requires one — checked
@@ -31,7 +43,12 @@
 ### Fixed
 * `rsostb download`, `submit` and `space`/`dataset publish` report Hub
   network, auth and permission failures in one line with a non-zero exit
-  instead of a traceback.
+  instead of a traceback, and keep the Hub's own explanation in full (it was
+  cut at 300 characters, which hid why a Space could not be created), with a
+  hint for 401/403 and for a Gradio Space refused for lack of a paid plan.
+* `rsostb space publish` creates the Space only when it does not exist yet,
+  and removes the other kind's files when switching between static and
+  Gradio.
 
 ## 1.0.0 — 2026-09-30
 
