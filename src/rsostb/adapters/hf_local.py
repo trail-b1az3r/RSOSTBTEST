@@ -1,4 +1,4 @@
-"""Local Hugging Face ``transformers`` models (``pip install 'rsostbtest-pro[transformers]'``)."""
+"""Local Hugging Face ``transformers`` models (``pip install 'RSOSTB[transformers]'``)."""
 from __future__ import annotations
 
 import time
@@ -23,7 +23,7 @@ class HFLocalAdapter(ModelAdapter):
         try:
             from transformers import AutoModelForCausalLM, AutoTokenizer  # type: ignore
         except ImportError as exc:
-            raise AdapterError("hf-local needs: pip install 'rsostbtest-pro[transformers]'") from exc
+            raise AdapterError("hf-local needs: pip install 'RSOSTB[transformers]'") from exc
         self._tok = AutoTokenizer.from_pretrained(self.model, revision=self.revision,
                                                   trust_remote_code=self.trust_remote_code)
         self._model = AutoModelForCausalLM.from_pretrained(self.model, revision=self.revision, device_map=self.device_map,

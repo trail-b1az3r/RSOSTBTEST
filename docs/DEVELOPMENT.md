@@ -55,20 +55,38 @@ src/rsostb/
 | `benchmark-validation.yml` | changes to benchmark/src/examples | task lint, version check, full oracle self-check **with code execution**, score-range and task-count assertions, example results re-verified with execution, slow tests |
 | `dataset-validation.yml` | changes to benchmark/dataset | `dataset build --check`, private-leak scan, answer-free prompt records, publish dry run |
 | `build.yml` | push, PR, called by release | sdist + wheel, `twine check`, install the wheel in a clean venv outside the checkout and run a benchmark from the bundled data |
-| `release.yml` | tag `vX.Y.Z` | tag = package version, full verification, build, GitHub Release; PyPI via trusted publishing when the variable `PUBLISH_PYPI` is `true` |
-| `update-hf.yml` | push to main, manual | validate, then publish the dataset and Space (secret `HF_TOKEN`; dry run without it) |
+| `release.yml` | tag `vX.Y.Z`, manual | tag = package version, full verification, build, publish to PyPI (trusted publishing), install it back from PyPI, GitHub Release; manual `validate` mode does all of it except the upload |
+| `update-hf.yml` | push to main, manual | validate, then publish the dataset and Space (HF token from a repository secret; dry run without one) |
 
-Repository settings used: secret `HF_TOKEN` (Hugging Face write token);
-variable `PUBLISH_PYPI`; a `pypi` environment configured as a trusted
-publisher on PyPI.
+Repository settings used:
+
+| Setting | Kind | Used by |
+|---|---|---|
+| `HF_TOKEN` (or `HF_API_KEY`, or any secret named in the run's `token_secret` input) | secret | `update-hf` — a Hugging Face **write** token |
+| `pypi` | environment | `release` — must match the environment on the PyPI trusted publisher |
+| `PYPI_ENVIRONMENT` | variable (optional) | `release` — use a different environment name |
+
+PyPI needs no token: the trusted publisher on PyPI must name owner
+`trail-b1az3r`, repository `RSOSTBTEST`, workflow `release.yml`,
+environment `pypi` (or `PYPI_ENVIRONMENT`), project `RSOSTB`.
 
 ## Releasing
 
 1. Update `CHANGELOG.md`; bump `RUNNER_VERSION` (and `DATASET_VERSION` /
    `BENCHMARK_VERSION` if tasks or scoring changed) in `src/rsostb/version.py`.
 2. If tasks or scoring changed: `rsostb dataset build && rsostb version freeze --notes "..."`.
-3. Commit, then `git tag v1.0.1 && git push --tags`. The `release` workflow does
-   the rest.
+3. Optional rehearsal: **Actions → release → Run workflow → `validate`**.
+   It runs the whole release except the upload and asks PyPI for an upload
+   token (then discards it), so a mismatch with the trusted publisher shows
+   up here, with the values PyPI was shown in the run summary. While the
+   publisher is still *pending* (the project is not on PyPI yet), PyPI
+   creates the empty project on this first use — the same moment it would on
+   the first release. Manual runs need the workflow on the default branch.
+4. Commit, then `git tag v1.0.1 && git push --tags`. The `release` workflow
+   verifies, builds, publishes to PyPI, installs the release back from PyPI
+   in a clean virtualenv and smoke-tests it, then creates the GitHub Release.
+   A tag that does not match `RUNNER_VERSION`, or a version already on PyPI,
+   stops the run before anything is uploaded.
 
 ## Changing scoring
 

@@ -41,10 +41,29 @@ HF_TOKEN=hf_... rsostb space publish       # default repo: spaces/ray0rf1re/RSOS
 ```
 
 The `update-hf` GitHub workflow does this automatically on pushes to `main`
-(after lint, version check, dataset freshness and the full self-check pass),
-using the repository secret `HF_TOKEN`. Without the secret it performs a dry
-run. Trigger it manually from the Actions tab (**update-hf → Run workflow**,
-choose `dataset`, `space` or `both`).
+(after lint, version check, dataset freshness and the full self-check pass).
+Without a token it performs a dry run.
+
+**The token** is a Hugging Face *write* token stored as a repository secret
+(**Settings → Secrets and variables → Actions**). The workflow uses the
+secret `HF_TOKEN`, falling back to `HF_API_KEY`. Before uploading it checks
+the token with Hugging Face and stops with a clear error if it is invalid or
+read-only, and warns if a target repo is outside the token's user and orgs.
+
+**Manual runs** (**Actions → update-hf → Run workflow**) take:
+
+| Input | Default | Meaning |
+|---|---|---|
+| `target` | `both` | `dataset`, `space` or `both` |
+| `token_secret` | `HF_TOKEN` | the *name* of the secret holding the token |
+| `dataset_repo` | `ray0rf1re/RSOSTBTEST-pro` | dataset to publish to |
+| `space_repo` | `ray0rf1re/RSOSTBTEST-pro` | Space to publish to |
+| `dry_run` | off | validate and list what would be uploaded, upload nothing |
+
+`token_secret` takes a secret's name, never the token itself: workflow
+inputs are saved in the run's event payload, which anyone who can read the
+repository can see. To use a different token, add it as a secret and put
+that secret's name here.
 
 ## Persisting submissions
 

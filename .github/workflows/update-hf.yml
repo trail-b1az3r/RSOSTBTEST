@@ -1,9 +1,14 @@
 name: update-hf
 
 # Syncs the Hugging Face dataset and Space from main. Everything is validated
-# first; nothing is uploaded unless every check passes. Requires the
-# repository secret HF_TOKEN (a write token for the target repos). Without it
-# the job runs the checks and a dry run only.
+# first; nothing is uploaded unless every check passes.
+#
+# Credentials: a Hugging Face write token stored as a repository secret.
+# By default the secret named HF_TOKEN is used, falling back to HF_API_KEY.
+# A manual run can name a different secret in `token_secret` — the NAME of the
+# secret, never the token itself: workflow inputs are stored in the run's
+# event payload and are readable by anyone who can read this repository.
+# Without a token the job runs the checks and a dry run only.
 
 on:
   push:
@@ -16,6 +21,22 @@ on:
         type: choice
         options: [both, dataset, space]
         default: both
+      token_secret:
+        description: "Name of the repository secret holding the HF write token (not the token itself)"
+        type: string
+        default: HF_TOKEN
+      dataset_repo:
+        description: "Dataset repo id to publish to"
+        type: string
+        default: ray0rf1re/RSOSTBTEST-pro
+      space_repo:
+        description: "Space repo id to publish to"
+        type: string
+        default: ray0rf1re/RSOSTBTEST-pro
+      dry_run:
+        description: "Validate and show what would be uploaded, without uploading"
+        type: boolean
+        default: false
 
 permissions:
   contents: read
@@ -29,8 +50,13 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 40
     env:
-      HF_TOKEN: ${{ secrets.HF_TOKEN }}
-      TARGET: ${{ github.event.inputs.target || 'both' }}
+      # The named secret, else HF_API_KEY. GitHub masks secret values in logs.
+      HF_TOKEN: ${{ secrets[inputs.token_secret || 'HF_TOKEN'] || secrets.HF_API_KEY }}
+      TOKEN_SOURCE: ${{ secrets[inputs.token_secret || 'HF_TOKEN'] != '' && (inputs.token_secret || 'HF_TOKEN') || (secrets.HF_API_KEY != '' && 'HF_API_KEY' || '') }}
+      TARGET: ${{ inputs.target || 'both' }}
+      DATASET_REPO: ${{ inputs.dataset_repo || 'ray0rf1re/RSOSTBTEST-pro' }}
+      SPACE_REPO: ${{ inputs.space_repo || 'ray0rf1re/RSOSTBTEST-pro' }}
+      DRY_RUN: ${{ inputs.dry_run && 'true' || 'false' }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -49,17 +75,49 @@ jobs:
           rsostb dataset build --check
           rsostb selfcheck --sandbox process --require-execution --workers 4 --quiet
 
-      - name: Dry run (no HF_TOKEN configured)
-        if: env.HF_TOKEN == ''
+      - name: Check the Hugging Face token
+        if: env.HF_TOKEN != ''
         run: |
-          rsostb dataset publish --dry-run
-          rsostb space publish --dry-run
-          echo "::notice::HF_TOKEN secret not set; skipped upload."
+          python - <<'EOF'
+          import os
+          import sys
+          from huggingface_hub import HfApi
+
+          def fail(message):
+              print(f"::error::{message}")   # workflow commands are read from stdout
+              sys.exit(1)
+
+          try:
+              info = HfApi(token=os.environ["HF_TOKEN"]).whoami()
+          except Exception as exc:
+              fail(f"the token in secret {os.environ['TOKEN_SOURCE']} was rejected by Hugging Face "
+                   f"({type(exc).__name__}); create a new write token and update the secret")
+          role = ((info.get("auth") or {}).get("accessToken") or {}).get("role", "unknown")
+          names = {info.get("name")} | {o.get("name") for o in info.get("orgs") or []}
+          print(f"token from secret {os.environ['TOKEN_SOURCE']}: user {info.get('name')}, role {role}")
+          if role == "read":
+              fail("this token is read-only; publishing needs a write token "
+                   "(or a fine-grained token with write access to the target repos)")
+          for var in ("DATASET_REPO", "SPACE_REPO"):
+              owner = os.environ[var].split("/")[0]
+              if owner not in names:
+                  print(f"::warning::{var}={os.environ[var]} is outside this token's user and orgs "
+                        f"({', '.join(sorted(n for n in names if n))}); the upload will fail without access")
+          EOF
+
+      - name: Dry run
+        if: env.HF_TOKEN == '' || env.DRY_RUN == 'true'
+        run: |
+          rsostb dataset publish --repo "$DATASET_REPO" --dry-run
+          rsostb space publish --repo "$SPACE_REPO" --dry-run
+          if [ -z "$HF_TOKEN" ]; then
+            echo "::notice::No Hugging Face token (secret HF_TOKEN or HF_API_KEY, or the secret named in token_secret); skipped upload."
+          fi
 
       - name: Publish dataset
-        if: env.HF_TOKEN != '' && (env.TARGET == 'both' || env.TARGET == 'dataset')
-        run: rsostb dataset publish
+        if: env.HF_TOKEN != '' && env.DRY_RUN != 'true' && (env.TARGET == 'both' || env.TARGET == 'dataset')
+        run: rsostb dataset publish --repo "$DATASET_REPO"
 
       - name: Publish Space
-        if: env.HF_TOKEN != '' && (env.TARGET == 'both' || env.TARGET == 'space')
-        run: rsostb space publish
+        if: env.HF_TOKEN != '' && env.DRY_RUN != 'true' && (env.TARGET == 'both' || env.TARGET == 'space')
+        run: rsostb space publish --repo "$SPACE_REPO"

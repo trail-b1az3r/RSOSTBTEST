@@ -10,6 +10,24 @@
   reply; servers that predate `backend_name` cannot satisfy it. Pairs with
   the HyperNix change that lets T1 serve `/inference` from its own runner.
 
+### Changed
+* **The PyPI distribution is named `RSOSTB`** (`pip install RSOSTB`,
+  extras as `RSOSTB[all]`), replacing `rsostbtest-pro`. The import package
+  and CLI stay `rsostb`, the benchmark stays RSOSTBTEST-pro, and results
+  record the runner as `RSOSTB <version>`.
+* **Release publishes to PyPI** via trusted publishing on every `vX.Y.Z`
+  tag (no `PUBLISH_PYPI` switch): verify → build → check the files and that
+  the version is new on PyPI → publish → install it back from PyPI and
+  smoke-test → GitHub Release. A manual `validate` run does all of it except
+  the upload, and checks the trusted publisher by exchanging the run's OIDC
+  token with PyPI, reporting the owner/repository/workflow/environment PyPI
+  was shown. Environment name overridable with the `PYPI_ENVIRONMENT`
+  variable.
+* **`update-hf` credentials**: the Hugging Face token comes from `HF_TOKEN`,
+  then `HF_API_KEY`, or a secret named in the new `token_secret` input; the
+  token is checked (valid, not read-only, can reach the target repos) before
+  anything uploads. New inputs `dataset_repo`, `space_repo` and `dry_run`.
+
 ### Fixed
 * `rsostb download`, `submit` and `space`/`dataset publish` report Hub
   network, auth and permission failures in one line with a non-zero exit
