@@ -15,7 +15,15 @@ from collections.abc import Callable
 from typing import TYPE_CHECKING, Any
 
 from . import behavior_detect as bd
-from .extract import extract_code, extract_json, normalize_text, parse_number, strip_thinking, word_count
+from .extract import (
+    extract_code,
+    extract_json,
+    normalize_text,
+    parse_number,
+    plain_quotes,
+    strip_thinking,
+    word_count,
+)
 
 if TYPE_CHECKING:  # pragma: no cover
     from ..datasets.task import Task
@@ -165,7 +173,13 @@ def _not_contains(text, p, task):
 
 @check("contains_count")
 def _contains_count(text, p, task):
+    """``term``: how many times one term occurs. ``terms``: how many of the
+    listed terms occur at least once (each matched as for contains_any)."""
     t = strip_thinking(text)
+    if "terms" in p:
+        hit = [x for x in _terms(p, "terms") if _find(t, x, p)]
+        score, detail = _bounds(len(hit), p)
+        return score, f"{detail} hit={hit[:6]}"
     term = p["term"]
     flags = 0 if p.get("case_sensitive") else re.I
     pat = r"(?<!\w)" + re.escape(term) + r"(?!\w)" if p.get("whole_word", True) else re.escape(term)
@@ -743,5 +757,5 @@ def run_check(spec: dict[str, Any], text: str, task: Task | None = None) -> tupl
     if fn is None:
         raise KeyError(f"unknown check type {kind!r}")
     params = {k: v for k, v in spec.items() if k != "type"}
-    score, detail = fn(text or "", params, task)
+    score, detail = fn(plain_quotes(text), params, task)
     return max(0.0, min(1.0, float(score))), detail

@@ -44,6 +44,7 @@ def leaderboard_rows(entries: list[dict[str, Any]], benchmark_version: str | Non
             "provider": m.get("provider"),
             "benchmark_version": e["benchmark_version"],
             "rsostb_score": e["scores"]["rsostb_score"],
+            "gpu_score": (e.get("gpu") or {}).get("gpu_score"),
             "tasks": e["n_tasks"],
             "full_run": e.get("full_run", False),
             "coverage": round(e.get("coverage", 0.0), 4),

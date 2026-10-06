@@ -39,6 +39,9 @@ def render_markdown(r: dict[str, Any]) -> str:
         _table(["Measure", "Value"], [
             ["RSOSTB Score", o.get("rsostb_score")],
             ["Normalized score", o.get("normalized")],
+            ["GPU score (general public use, 0-100)",
+             f"{_fmt((o.get('gpu') or {}).get('gpu_score'))} (x{_fmt((o.get('gpu') or {}).get('multiplier'), 2)}; "
+             f"{(o.get('gpu') or {}).get('basis', '—')})"],
             ["Raw weighted points", o.get("raw_weighted_points")],
             ["Maximum possible score", o.get("maximum_possible_score")],
             ["Minimum possible score", o.get("minimum_possible_score")],

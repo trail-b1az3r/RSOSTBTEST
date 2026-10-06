@@ -28,6 +28,7 @@ import json
 import os
 import shutil
 import signal
+import stat
 import subprocess
 import sys
 import tempfile
@@ -148,6 +149,42 @@ def resolve_toolchain(name: str) -> str | None:
     return shutil.which(name)
 
 
+def _usable_by_others(path: str | None) -> bool:
+    """Whether a user other than the file's owner can execute ``path``: every
+    directory on the way (for the link and for its target) is searchable and
+    the file is executable by "others"."""
+    if not path:
+        return False
+    for p in {Path(path), Path(os.path.realpath(path))}:
+        try:
+            if not p.stat().st_mode & stat.S_IXOTH:
+                return False
+            if any(not d.stat().st_mode & stat.S_IXOTH for d in p.parents):
+                return False
+        except OSError:
+            return False
+    return True
+
+
+def sandbox_python() -> str | None:
+    """The interpreter for sandboxed Python after privileges are dropped.
+
+    ``sys.executable`` is often a virtualenv under a private directory (root's
+    home, a 0700 temp dir) that the unprivileged sandbox user cannot reach,
+    and then every Python-graded task failed as "no result". The grading
+    worker needs only the standard library, so the venv's base interpreter or
+    the system python3 serve equally. ``RSOSTB_SANDBOX_PYTHON`` overrides.
+    """
+    override = os.environ.get("RSOSTB_SANDBOX_PYTHON")
+    if override:
+        return override
+    for cand in (sys.executable, getattr(sys, "_base_executable", None), os.path.realpath(sys.executable),
+                 shutil.which("python3"), "/usr/bin/python3", "/usr/local/bin/python3"):
+        if _usable_by_others(cand):
+            return cand
+    return None
+
+
 class _Capture(threading.Thread):
     def __init__(self, stream, limit: int, on_overflow) -> None:
         super().__init__(daemon=True)
@@ -238,6 +275,12 @@ class ProcessSandbox(Sandbox):
 
             exe = argv[0]
             resolved = resolve_toolchain(exe) if not os.path.isabs(exe) and "/" not in exe else exe
+            if self.drop_privileges and exe in ("python", "python3"):
+                resolved = sandbox_python()
+                if resolved is None:
+                    return ExecResult(None, "", "no Python interpreter that the unprivileged sandbox user can run; "
+                                      "set RSOSTB_SANDBOX_PYTHON to one (e.g. /usr/bin/python3)", 0.0,
+                                      backend=self.name, notes=["toolchain-unreachable"])
             if resolved is None:
                 return ExecResult(None, "", f"toolchain not found: {exe}", 0.0, backend=self.name,
                                   notes=["toolchain-missing"])

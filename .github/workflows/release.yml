@@ -46,6 +46,7 @@ jobs:
       version: ${{ steps.plan.outputs.version }}
       package: ${{ steps.plan.outputs.package }}
       tag: ${{ steps.plan.outputs.tag }}
+      ref: ${{ steps.plan.outputs.ref }}
     steps:
       - uses: actions/checkout@v4
         with:
@@ -101,11 +102,20 @@ jobs:
             mode=validate
           fi
 
+          # Check out the tag when it exists. A validate run normally comes
+          # before the tag does, so it builds the commit it was started from.
+          if git rev-parse -q --verify "refs/tags/$selected_tag" >/dev/null; then
+            ref="$selected_tag"
+          else
+            ref="$GITHUB_SHA"
+          fi
+
           {
             echo "mode=$mode"
             echo "version=$version"
             echo "package=$package"
             echo "tag=$selected_tag"
+            echo "ref=$ref"
           } >> "$GITHUB_OUTPUT"
           echo "### Release plan: **$mode** $package $version using tag \`$selected_tag\` (source: $source_version; latest tag: ${highest_tag:-none})" >> "$GITHUB_STEP_SUMMARY"
 
@@ -116,7 +126,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
-          ref: ${{ needs.plan.outputs.tag }}
+          ref: ${{ needs.plan.outputs.ref }}
           fetch-depth: 0
       - uses: actions/setup-python@v5
         with:
@@ -283,5 +293,9 @@ jobs:
           path: dist
       - uses: softprops/action-gh-release@v2
         with:
+          # Named explicitly: a manual publish runs from a branch, and this
+          # creates the tag on the commit that was built.
+          tag_name: ${{ needs.plan.outputs.tag }}
+          target_commitish: ${{ needs.plan.outputs.ref == needs.plan.outputs.tag && needs.plan.outputs.tag || github.sha }}
           files: dist/*
           generate_release_notes: true

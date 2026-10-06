@@ -11,8 +11,9 @@ HINTS = {
     403: "the token cannot write to this repo; use a write token (or a fine-grained token with write access to it)",
 }
 GRADIO_402 = ("Hugging Face needs a paid plan (PRO, or Team/Enterprise for an organization) to create Gradio or "
-              "Docker Spaces; static Spaces are free for every account. Publish the static Space instead: "
-              "`rsostb space publish --sdk static`.")
+              "Docker Spaces on CPU hardware. Either create the Space yourself on the website with ZeroGPU hardware "
+              "(free for up to two Gradio Spaces on a personal account) and publish again, or publish the static "
+              "Space, free on every account: `rsostb space publish --sdk static`.")
 
 
 def hub_status(exc: BaseException) -> int | None:

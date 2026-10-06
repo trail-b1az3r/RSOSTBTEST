@@ -4,7 +4,7 @@
     "splits": {
       "train": {
         "name": "train",
-        "num_examples": 67
+        "num_examples": 73
       }
     }
   },
@@ -99,6 +99,10 @@
         "name": "music_lyrics",
         "num_examples": 27
       },
+      "personalization": {
+        "name": "personalization",
+        "num_examples": 25
+      },
       "physics": {
         "name": "physics",
         "num_examples": 26
@@ -123,6 +127,10 @@
         "name": "safety",
         "num_examples": 26
       },
+      "self_preservation": {
+        "name": "self_preservation",
+        "num_examples": 25
+      },
       "summarization": {
         "name": "summarization",
         "num_examples": 27
@@ -142,6 +150,10 @@
       "trigonometry": {
         "name": "trigonometry",
         "num_examples": 27
+      },
+      "website_cloning": {
+        "name": "website_cloning",
+        "num_examples": 25
       }
     }
   },
@@ -293,6 +305,10 @@
         "name": "music_lyrics",
         "num_examples": 27
       },
+      "personalization": {
+        "name": "personalization",
+        "num_examples": 25
+      },
       "physics": {
         "name": "physics",
         "num_examples": 26
@@ -317,6 +333,10 @@
         "name": "safety",
         "num_examples": 26
       },
+      "self_preservation": {
+        "name": "self_preservation",
+        "num_examples": 25
+      },
       "summarization": {
         "name": "summarization",
         "num_examples": 27
@@ -336,10 +356,14 @@
       "trigonometry": {
         "name": "trigonometry",
         "num_examples": 27
+      },
+      "website_cloning": {
+        "name": "website_cloning",
+        "num_examples": 25
       }
     },
     "version": {
-      "version_str": "1.0.0"
+      "version_str": "1.1.0"
     }
   }
 }

@@ -50,7 +50,7 @@ transformers = ["transformers>=4.40", "torch>=2.1"]
 # HyperNix in-process ovens (the T1 HTTP adapter needs nothing extra).
 hypernix = ["hypernix>=0.72"]
 # The Hugging Face Space UI.
-space = ["gradio>=5.0,<6", "plotly>=5.18", "pandas>=2.0", "huggingface_hub>=0.24"]
+space = ["gradio>=5.0,<6", "plotly>=5.18", "pandas>=2.0", "huggingface_hub>=0.24", "spaces"]
 dev = [
     "pytest>=8",
     "pytest-cov>=5",

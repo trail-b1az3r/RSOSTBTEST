@@ -77,6 +77,12 @@ Everything except `-M` is optional; the defaults run the full benchmark.
 | `--ctx` | model default | llama.cpp context length |
 | `--server-timeout` | 1800 s | wait for a started server, first-run downloads included |
 | `--request-timeout` | 600 s | per model request |
+| `--price-in`, `--price-out` | — | API price per 1M tokens, for every model (GPU score) |
+| `--model-info` | — | YAML of per-model size and price: `{qwen3-4b: {parameters: 4B, price_in: 0.1, price_out: 0.3}}` |
+
+The summary ranks models by RSOSTB Score and also shows each one's **GPU
+score** (general public use; see `docs/SCORING.md`). Size is read from the
+model name when it says (`Qwen3-4B` → 4B) unless `--model-info` gives it.
 
 ## Requirements
 

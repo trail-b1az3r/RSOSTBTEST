@@ -48,7 +48,7 @@ jobs:
           from rsostb.submission.results_io import read_results
           b = load_benchmark()
           counts = collections.Counter(t.category for t in b.active_tasks())
-          assert len(counts) == 33 and min(counts.values()) >= 25, counts
+          assert len(counts) == 36 and min(counts.values()) >= 25, counts
           doc = read_results("selfcheck.jsonl")
           s = doc["scores"]["rsostb_score"]
           assert -500 <= s <= 150000, s

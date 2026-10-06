@@ -8,6 +8,12 @@ Runs both from a source checkout (``python hf/space/app.py``) and from the
 self-contained bundle staged by ``rsostb``'s ``publish_space`` (which places
 ``src/rsostb`` and ``benchmark/`` next to this file).
 
+Hardware: runs on CPU or on ZeroGPU. ZeroGPU (the free option for Gradio
+Spaces) refuses to start an app that registers no ``@spaces.GPU`` function,
+so one is registered (``zero_gpu_device``, the "Check the GPU" button on the
+About tab). Grading never uses the GPU: it runs on the Space's CPU, and no
+visitor's GPU quota is spent unless they press that button.
+
 Environment:
   RSOSTB_RESULTS_REPO  HF dataset that persists entries/submissions (optional)
   HF_TOKEN             write token for that dataset (Space secret)
@@ -24,6 +30,14 @@ import tempfile
 import threading
 from pathlib import Path
 from typing import Any
+
+# `spaces` first: on ZeroGPU it must be imported before gradio and before
+# anything that could touch CUDA. It is absent locally and on CPU Spaces.
+try:
+    import spaces
+except ImportError:
+    spaces = None
+
 HERE = Path(__file__).resolve().parent
 # The checkout root when run as hf/space/app.py. A deployed Space runs from a
 # top-level directory (/app/app.py), where this is just "/": `.parent` stops at
@@ -47,6 +61,28 @@ from rsostb.version import BENCHMARK_NAME, BENCHMARK_VERSION, RUNNER_VERSION  # 
 
 log = logging.getLogger("rsostb.space")
 logging.basicConfig(level=logging.INFO)
+
+
+def _gpu(fn):
+    """``@spaces.GPU`` when the spaces package is present (a no-op off ZeroGPU)."""
+    return spaces.GPU(duration=15)(fn) if spaces is not None else fn
+
+
+@_gpu
+def zero_gpu_device() -> str:
+    """The accelerator ZeroGPU attaches for one call. Defining a GPU function
+    at import time, before ``launch()``, is what ZeroGPU checks at start-up."""
+    import shutil
+    import subprocess
+
+    if not shutil.which("nvidia-smi"):
+        return "No GPU attached (CPU hardware, or not running on ZeroGPU)."
+    try:
+        out = subprocess.run(["nvidia-smi", "--query-gpu=name,memory.total", "--format=csv,noheader"],
+                             capture_output=True, text=True, timeout=10).stdout.strip()
+    except (OSError, subprocess.SubprocessError) as exc:
+        return f"nvidia-smi failed: {exc}"
+    return f"GPU attached: {out}" if out else "nvidia-smi reported no GPU."
 
 RESULTS_REPO = os.environ.get("RSOSTB_RESULTS_REPO", "").strip()
 HF_TOKEN = os.environ.get("HF_TOKEN", "").strip()
@@ -174,6 +210,7 @@ def leaderboard_frame(version: str, kinds: list[str], full_only: bool, search: s
             "Model": r["model"],
             "Kind": r["kind"],
             "RSOSTB Score": round(r["rsostb_score"], 2),
+            "GPU score": None if r.get("gpu_score") is None else round(r["gpu_score"], 2),
         }
         for mid, name in METRICS.items():
             if mid != "rsostb_score" and f"metric:{mid}" in r:
@@ -259,6 +296,8 @@ def entry_details(sid: str | None):
     md = [
         f"## {html.escape(m['name'])}",
         f"**RSOSTB Score:** {s['rsostb_score']:,.2f}  ·  normalized {s['normalized']:.4f}",
+        (f"**GPU score (general public use):** {e['gpu']['gpu_score']:.2f} / 100 · ×{e['gpu']['multiplier']:.2f} · "
+         f"{html.escape(e['gpu']['basis'])}") if e.get("gpu") else "**GPU score:** —",
         f"**Kind:** {m.get('kind', 'model')} · **Provider:** {m.get('provider') or '—'} · "
         f"**Version:** {m.get('version') or '—'} · **Parameters:** {m.get('parameters') or '—'} · "
         f"**Quantization:** {m.get('quantization') or '—'}",
@@ -413,7 +452,7 @@ def build_ui() -> gr.Blocks:
                 kinds = gr.CheckboxGroup(choices=[(v, k) for k, v in KIND_LABELS.items()],
                                          value=list(KIND_LABELS), label="Show")
                 full_only = gr.Checkbox(value=False, label="Full runs only")
-                show_cats = gr.Checkbox(value=False, label="Show all 33 categories")
+                show_cats = gr.Checkbox(value=False, label=f"Show all {len(CATS)} categories")
             search = gr.Textbox(label="Search model / provider", placeholder="e.g. llama")
             board = gr.Dataframe(interactive=False, wrap=True)
             chart = gr.Plot()
@@ -466,6 +505,9 @@ def build_ui() -> gr.Blocks:
 
         with gr.Tab("ℹ️ About"):
             gr.Markdown(ABOUT)
+            gpu_btn = gr.Button("Check the GPU", size="sm")
+            gpu_out = gr.Markdown()
+            gpu_btn.click(zero_gpu_device, None, gpu_out, concurrency_limit=1)
     return demo
 
 
