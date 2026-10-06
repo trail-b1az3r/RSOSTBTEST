@@ -298,7 +298,7 @@ def run_benchmark(
         "dataset_hash": bench.dataset_hash,
         "compat_key": "",
         "model": {k: model.get(k) for k in ("name", "provider", "version", "revision", "parameters", "context_length",
-                                            "quantization", "adapter", "kind", "url") if k in model},
+                                            "quantization", "adapter", "kind", "url", "pricing") if k in model},
         "runtime": runtime_info(sb, model.get("quantization")),
         "run": {
             "run_id": secrets.token_hex(8),

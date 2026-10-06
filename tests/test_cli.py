@@ -22,7 +22,9 @@ def run_cli(*argv: str) -> int:
 
 def test_module_entrypoint():
     out = subprocess.run([sys.executable, "-m", "rsostb", "--version"], capture_output=True, text=True, check=True)
-    assert "rsostb" in out.stdout and "benchmark v1.0" in out.stdout
+    from rsostb.version import BENCHMARK_VERSION, RUNNER_VERSION
+
+    assert f"rsostb {RUNNER_VERSION}" in out.stdout and f"benchmark v{BENCHMARK_VERSION}" in out.stdout
 
 
 def test_list_and_info(capsys):

@@ -59,6 +59,7 @@ from .adapters.base import AdapterError, Generation, ModelAdapter, sampling
 from .adapters.hypernix import T1_BACKENDS, HyperNixT1Adapter
 from .adapters.remote import OpenAICompatibleAdapter
 from .cli import output as out
+from .scoring.gpu import gpu_for_results, parse_parameters
 
 BACKENDS = ("gguf", "hnx_llama", "multilama", "cactus", "t1")
 ALIASES = {
@@ -432,11 +433,12 @@ class Outcome:
     tasks: int = 0
     validation: str = ""
     error: str = ""
+    gpu: dict[str, Any] | None = None
 
     def to_dict(self) -> dict[str, Any]:
         return {"model": self.spec.ref, "name": self.spec.name, "backend": self.spec.backend,
                 "variant": self.spec.variant, "chosen_because": self.spec.why, "ok": self.ok,
-                "rsostb_score": self.score, "normalized": self.normalized, "tasks": self.tasks,
+                "rsostb_score": self.score, "normalized": self.normalized, "gpu": self.gpu, "tasks": self.tasks,
                 "validation": self.validation, "results": str(self.results) if self.results else None,
                 "seconds": round(self.seconds, 1), "error": self.error or None}
 
@@ -456,6 +458,7 @@ def bench_one(spec: ModelSpec, opts: argparse.Namespace, out_dir: Path) -> Outco
             raise BenchMakeError(f"did not answer a ping: {exc}") from exc
         gen = {k: v for k, v in (("temperature", opts.temperature), ("max_tokens", opts.max_tokens)) if v is not None}
         meta = {k: v for k, v in running.meta.items() if v}  # the backend is the results' model.adapter
+        meta.update(model_info(spec, opts))
         doc = run_benchmark(
             running.adapter, categories=opts.categories, limit_per_category=opts.limit_per_category,
             seed=opts.seed, sandbox=opts.sandbox, max_workers=running.workers or opts.workers, generation=gen,
@@ -469,7 +472,7 @@ def bench_one(spec: ModelSpec, opts: argparse.Namespace, out_dir: Path) -> Outco
         report = validate_results(doc)
         s = doc["scores"]
         return Outcome(spec, True, time.monotonic() - t0, results, s["rsostb_score"], s.get("normalized"),
-                       len(doc["task_results"]), report.status)
+                       len(doc["task_results"]), report.status, gpu=gpu_for_results(doc).to_dict())
     except (BenchMakeError, AdapterError) as exc:
         return Outcome(spec, False, time.monotonic() - t0, error=str(exc))
     finally:
@@ -477,17 +480,36 @@ def bench_one(spec: ModelSpec, opts: argparse.Namespace, out_dir: Path) -> Outco
             running.stop()
 
 
+def model_info(spec: ModelSpec, opts: argparse.Namespace) -> dict[str, Any]:
+    """Size and price for the results (and the GPU score): --model-info entries for this
+    model (by its -M reference or name), else --price-in/--price-out; size defaults to
+    what the name says (Qwen3-4B -> 4B)."""
+    info = dict((opts.model_info or {}).get(spec.ref) or (opts.model_info or {}).get(spec.name) or {})
+    meta: dict[str, Any] = {}
+    params = info.get("parameters") or parse_parameters(spec.name)
+    if params:
+        meta["parameters"] = params if isinstance(params, (int, float)) else str(params)
+    pin = info.get("price_in", opts.price_in)
+    pout = info.get("price_out", opts.price_out)
+    if pin is not None or pout is not None:
+        meta["pricing"] = {"input_per_mtok": pin, "output_per_mtok": pout,
+                           "currency": info.get("currency") or opts.price_currency}
+    return meta
+
+
 def summary_markdown(outcomes: list[Outcome]) -> str:
-    rows = ["| # | model | backend | RSOSTB Score | tasks | validation | time |", "|---|---|---|---:|---:|---|---:|"]
+    rows = ["| # | model | backend | RSOSTB Score | GPU score | tasks | validation | time |",
+            "|---|---|---|---:|---:|---:|---|---:|"]
     ranked = sorted(outcomes, key=lambda o: (not o.ok, -(o.score or 0)))
     for i, o in enumerate(ranked, 1):
         backend = o.spec.backend + (f"@{o.spec.variant}" if o.spec.variant else "")
         if o.ok:
-            rows.append(f"| {i} | `{o.spec.name}` | {backend} | {o.score:,.2f} | {o.tasks} | {o.validation} | "
+            gpu = f"{o.gpu['gpu_score']:.2f}" if o.gpu else "—"
+            rows.append(f"| {i} | `{o.spec.name}` | {backend} | {o.score:,.2f} | {gpu} | {o.tasks} | {o.validation} | "
                         f"{o.seconds / 60:.1f} min |")
         else:
             reason = (o.error.splitlines() or ["failed"])[0][:120].replace("|", "/")
-            rows.append(f"| – | `{o.spec.name}` | {backend} | failed | | {reason} | |")
+            rows.append(f"| – | `{o.spec.name}` | {backend} | failed | | | {reason} | |")
     return "\n".join(rows) + "\n"
 
 
@@ -518,12 +540,22 @@ def build_parser() -> argparse.ArgumentParser:
     be.add_argument("--server-timeout", type=float, default=1800.0,
                     help="seconds to wait for a started server, first-run downloads included (default 1800)")
     be.add_argument("--request-timeout", type=float, default=600.0, help="seconds per model request")
+    gp = p.add_argument_group("GPU score (general public use)")
+    gp.add_argument("--price-in", type=float, metavar="PER_1M", help="API price per 1M input tokens, for every model")
+    gp.add_argument("--price-out", type=float, metavar="PER_1M", help="API price per 1M output tokens, for every model")
+    gp.add_argument("--price-currency", default="USD")
+    gp.add_argument("--model-info", metavar="YAML",
+                    help="per-model size and price: {model: {parameters: 8B, price_in: 0.2, price_out: 0.6}}")
     return p
 
 
 def main(argv: list[str] | None = None) -> int:
     opts = build_parser().parse_args(argv)
     opts.categories = [c for c in (opts.categories or "").split(",") if c] or None
+    if opts.model_info:
+        import yaml
+
+        opts.model_info = yaml.safe_load(Path(opts.model_info).read_text(encoding="utf-8")) or {}
     refs = split_models(opts.models)
     if not refs:
         print(out.red("-M lists no models"), file=sys.stderr)

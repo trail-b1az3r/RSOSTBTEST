@@ -246,6 +246,7 @@ function renderLeaderboard() {
     { name: "Model", get: entryLink },
     { name: "Kind", get: r => r.model.kind || "model" },
     { name: "RSOSTB Score", num: true, get: r => el("strong", {}, num(r.scores.rsostb_score)) },
+    { name: "GPU score", num: true, get: r => num((r.gpu || {}).gpu_score) },
     ...Object.entries(METRICS).map(([id, name]) => ({ name, num: true, get: r => num((r.scores.metrics || {})[id]) })),
   ];
   if ($("lb-cats").checked) {
@@ -286,6 +287,8 @@ function renderDetails(sid) {
       ["Parameters", m.parameters ?? "—"], ["Quantization", m.quantization || "—"], ["Adapter", m.adapter || "—"],
       ["Benchmark", `${e.benchmark_version} · dataset ${e.dataset_version} · scoring ${e.scoring_version} · runner ${e.runner_version}`],
       ["Tasks", `${e.n_tasks} (${e.full_run ? "full run" : "partial run"}) · coverage ${num(e.coverage, 3)}`],
+      ["GPU score", e.gpu ? `${num(e.gpu.gpu_score)} / 100 (×${num(e.gpu.multiplier)}; ${e.gpu.basis})` : "—"],
+      ["Price", e.model.pricing ? `${e.model.pricing.input_per_mtok ?? "—"} in / ${e.model.pricing.output_per_mtok ?? "—"} out per 1M tokens (${e.model.pricing.currency || "USD"})` : "—"],
       ["Judge", e.judge || "none"], ["Validation", e.validation_status],
       ["Run date", (e.timestamp || "—").slice(0, 19)], ["Hardware", (e.hardware || []).join("; ") || "—"],
       ["Submission id", code(e.submission_id)],
@@ -405,6 +408,9 @@ function renderStatic() {
       ", with penalties (hallucination, unsafe output, over-refusal, invalid output, adversarial traps) and small bonuses. Totals are normalised and ",
       "published on a −500 to +150,000 scale. Every result pins the benchmark, dataset and scoring versions and a hash of the scoring config, so ",
       "changing a weight produces a new, non-comparable score version."),
+    el("p", {}, el("strong", {}, "GPU score. "), "General public use, 0–100: the normalized RSOSTB Score, multiplied by 0.1–1 when it ",
+      "is below 0.6 — the more so the bigger the model and the pricier its API. Size comes from the model name or metadata, price ",
+      "from the run's recorded API pricing. It is derived and never changes the RSOSTB Score."),
     el("p", {}, el("strong", {}, "Validation. "), "Every entry is re-scored from its stored responses by the same code as ", code("rsostb validate --rescore"),
       ". Code-execution tasks are taken as claimed unless re-run offline with ", code("--execute"), " (status verified)."),
     el("p", {}, el("strong", {}, "Data. "), "The page is built from the GitHub repository; the same entries are in ",

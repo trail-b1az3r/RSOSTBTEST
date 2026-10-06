@@ -24,7 +24,8 @@
         "context_length": {"type": ["integer", "null"]},
         "quantization": {"type": ["string", "null"], "maxLength": 64},
         "adapter": {"type": ["string", "null"], "maxLength": 64},
-        "kind": {"enum": ["model", "baseline", "reference", "synthetic"]}
+        "kind": {"enum": ["model", "baseline", "reference", "synthetic"]},
+        "pricing": {"type": ["object", "null"], "additionalProperties": false, "properties": {"input_per_mtok": {"type": ["number", "null"], "minimum": 0}, "output_per_mtok": {"type": ["number", "null"], "minimum": 0}, "currency": {"type": ["string", "null"], "maxLength": 8}}}
       }
     },
     "benchmark_version": {"type": "string"},
@@ -53,6 +54,7 @@
       }
     },
     "validation_status": {"enum": ["verified", "consistent", "rejected"]},
-    "validation_notes": {"type": "array", "items": {"type": "string"}}
+    "validation_notes": {"type": "array", "items": {"type": "string"}},
+    "gpu": {"type": ["object", "null"], "description": "General Public Use score (rsostb.scoring.gpu): derived from the RSOSTB Score, size and price; not part of the RSOSTB Score"}
   }
 }

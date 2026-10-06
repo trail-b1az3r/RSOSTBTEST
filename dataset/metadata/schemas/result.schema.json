@@ -83,7 +83,8 @@
         "quantization": {"type": ["string", "null"], "maxLength": 64},
         "adapter": {"type": ["string", "null"], "maxLength": 64},
         "kind": {"enum": ["model", "baseline", "reference", "synthetic"]},
-        "url": {"type": ["string", "null"], "maxLength": 512}
+        "url": {"type": ["string", "null"], "maxLength": 512},
+        "pricing": {"type": ["object", "null"], "additionalProperties": false, "properties": {"input_per_mtok": {"type": ["number", "null"], "minimum": 0}, "output_per_mtok": {"type": ["number", "null"], "minimum": 0}, "currency": {"type": ["string", "null"], "maxLength": 8}}}
       }
     },
     "category_score": {

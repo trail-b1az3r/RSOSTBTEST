@@ -5,6 +5,7 @@ from datetime import datetime, timezone
 from typing import Any
 
 from ..config import load_benchmark_config
+from ..scoring.gpu import gpu_for_results
 
 CAVEATS = [
     "The RSOSTB Score is one summary of many measurements. Read the category and metric breakdown; "
@@ -59,6 +60,7 @@ def build_report(results: dict[str, Any], bench=None) -> dict[str, Any]:
             "max_weighted_points": scores.get("max_weighted_points"),
             "min_weighted_points": scores.get("min_weighted_points"),
             "confidence_interval": scores.get("confidence_interval"),
+            "gpu": gpu_for_results(results).to_dict(),
         },
         "metrics": [{"id": k, "name": metric_names.get(k, k), "value": v} for k, v in (scores.get("metrics") or {}).items()],
         "categories": cats,

@@ -210,6 +210,7 @@ def leaderboard_frame(version: str, kinds: list[str], full_only: bool, search: s
             "Model": r["model"],
             "Kind": r["kind"],
             "RSOSTB Score": round(r["rsostb_score"], 2),
+            "GPU score": None if r.get("gpu_score") is None else round(r["gpu_score"], 2),
         }
         for mid, name in METRICS.items():
             if mid != "rsostb_score" and f"metric:{mid}" in r:
@@ -295,6 +296,8 @@ def entry_details(sid: str | None):
     md = [
         f"## {html.escape(m['name'])}",
         f"**RSOSTB Score:** {s['rsostb_score']:,.2f}  ·  normalized {s['normalized']:.4f}",
+        (f"**GPU score (general public use):** {e['gpu']['gpu_score']:.2f} / 100 · ×{e['gpu']['multiplier']:.2f} · "
+         f"{html.escape(e['gpu']['basis'])}") if e.get("gpu") else "**GPU score:** —",
         f"**Kind:** {m.get('kind', 'model')} · **Provider:** {m.get('provider') or '—'} · "
         f"**Version:** {m.get('version') or '—'} · **Parameters:** {m.get('parameters') or '—'} · "
         f"**Quantization:** {m.get('quantization') or '—'}",
@@ -449,7 +452,7 @@ def build_ui() -> gr.Blocks:
                 kinds = gr.CheckboxGroup(choices=[(v, k) for k, v in KIND_LABELS.items()],
                                          value=list(KIND_LABELS), label="Show")
                 full_only = gr.Checkbox(value=False, label="Full runs only")
-                show_cats = gr.Checkbox(value=False, label="Show all 33 categories")
+                show_cats = gr.Checkbox(value=False, label=f"Show all {len(CATS)} categories")
             search = gr.Textbox(label="Search model / provider", placeholder="e.g. llama")
             board = gr.Dataframe(interactive=False, wrap=True)
             chart = gr.Plot()

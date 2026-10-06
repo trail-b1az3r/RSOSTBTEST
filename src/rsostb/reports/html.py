@@ -205,7 +205,9 @@ def render_html(r: dict[str, Any]) -> str:
         f'(range {num(o.get("minimum_possible_score"), 0)} to {num(o.get("maximum_possible_score"), 0)})</div></div>',
         f'<div><div class="label">Normalized {num(o.get("normalized"), 4)} · raw weighted points '
         f'{num(o.get("raw_weighted_points"))} of {num(o.get("max_weighted_points"))}</div>',
-        f'<div class="label">95% bootstrap interval: {num(ci["low"]) + " – " + num(ci["high"]) if ci else "—"}</div></div>',
+        f'<div class="label">95% bootstrap interval: {num(ci["low"]) + " – " + num(ci["high"]) if ci else "—"}</div>',
+        f'<div class="label">GPU score (general public use): {num((o.get("gpu") or {}).get("gpu_score"))} / 100 '
+        f'· x{num((o.get("gpu") or {}).get("multiplier"), 2)} · {e((o.get("gpu") or {}).get("basis", ""))}</div></div>',
         "</section>",
         '<section class="card"><div class="tiles">'
         + "".join(f'<div class="tile"><div class="k">{e(k)}</div><div class="v">{num(v, 3)}</div></div>' for k, v in tiles)

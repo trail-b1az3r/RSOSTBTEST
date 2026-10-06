@@ -6,10 +6,10 @@ package and the same data:
 | | **static** | **gradio** |
 |---|---|---|
 | What it is | the leaderboard pre-built into one page ([`hf/static/`](../hf/static/)) | the interactive app ([`hf/space/app.py`](../hf/space/app.py)) |
-| Hugging Face plan | free on every account | a paid plan (PRO, or Team/Enterprise for an organization) to **create** it |
+| Hugging Face plan | free on every account | free on **ZeroGPU** hardware (up to 2 per personal account); on CPU hardware, a paid plan to **create** it |
 | Submissions | `rsostb submit` opens a pull request on the results dataset; merged runs are listed at the next rebuild | uploaded in the **Submit** tab and validated in the Space |
 
-Hugging Face now only lets paid plans create Gradio and Docker Spaces; static
+Hugging Face only lets paid plans create Gradio and Docker Spaces on CPU hardware (free personal accounts may host up to two Gradio Spaces on ZeroGPU); static
 Spaces are free for everyone. On a free account, creating a Gradio Space
 fails with `402 Payment Required`, and `rsostb` says so and points to
 `--sdk static`. Updating a Gradio Space that already exists needs no plan.
@@ -22,7 +22,7 @@ Both have the same tabs:
 
 * **Leaderboard** — filter by benchmark version, entry kind (models,
   baselines, synthetic), full runs only; free-text search; optional columns
-  for all 33 categories; a bar chart of the top entries.
+  for all 36 categories; a bar chart of the top entries.
 * **Model details** — score, versions, coverage, judge, hardware, rates
   (hallucination, over/under-refusal, tool-call accuracy, coding pass rate),
   per-category and per-difficulty charts, metric and evaluation-family tables.
@@ -58,7 +58,17 @@ rsostb space stage --out build/space       # then open build/space/index.html
 rsostb space stage --results-repo ""       # baselines only (no network)
 ```
 
-## The Gradio Space (paid Hugging Face plan)
+## The Gradio Space on ZeroGPU (free) or CPU
+
+Gradio Spaces on personal accounts can run free on **ZeroGPU** hardware.
+ZeroGPU refuses to start an app that registers no `@spaces.GPU` function
+(`No @spaces.GPU function detected during startup`), so `app.py` imports
+`spaces` before gradio and registers one, `zero_gpu_device` — the "Check the
+GPU" button on the About tab. Grading itself stays on the CPU and uses no GPU
+time. Pick **ZeroGPU** under the Space's *Settings → Hardware* (the README
+also suggests it with `suggested_hardware: zero-a10g`).
+
+## The Gradio Space
 
 ```bash
 pip install -e ".[space]"
@@ -77,7 +87,7 @@ git-ignored) seeded with the baseline runs in `examples/results/`.
 ```bash
 rsostb space publish --dry-run
 HF_TOKEN=hf_... rsostb space publish                 # existing Space: same kind; new Space: static
-HF_TOKEN=hf_... rsostb space publish --sdk gradio    # needs a paid plan if the Space does not exist yet
+HF_TOKEN=hf_... rsostb space publish --sdk gradio    # a new Space: create it on ZeroGPU first, or have a paid plan
 ```
 
 A Space that does not exist yet is created with the chosen SDK; an existing
