@@ -85,6 +85,7 @@ def _walk_checks(task: Task) -> list[dict[str, Any]]:
 
 def lint_task(task: Task, bench: Benchmark, report: LintReport) -> None:  # noqa: C901
     from ..evaluators import CHECKS, EVALUATORS, VALIDATORS
+    from ..evaluators.checks import run_check
 
     tid = task.data.get("id", "<no id>")
     for err in schema_errors("task", task.to_dict()):
@@ -224,6 +225,13 @@ def lint_task(task: Task, bench: Benchmark, report: LintReport) -> None:  # noqa
     for chk in _walk_checks(task):
         if chk.get("type") not in CHECKS:
             report.add("error", tid, f"unknown check type {chk.get('type')!r}")
+            continue
+        # Run it once on a dummy answer: a missing or misnamed parameter would
+        # otherwise surface only at grading time, as an evaluator error.
+        try:
+            run_check({k: v for k, v in chk.items() if k != "weight"}, "sample answer.", task)
+        except (KeyError, TypeError, ValueError, re.error) as exc:
+            report.add("error", tid, f"check {chk.get('type')!r} cannot run: {type(exc).__name__}: {exc}")
     vname = ev.get("validator")
     if vname and vname not in VALIDATORS:
         report.add("error", tid, f"unknown validator {vname!r}")

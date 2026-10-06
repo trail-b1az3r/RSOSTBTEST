@@ -173,7 +173,13 @@ def _not_contains(text, p, task):
 
 @check("contains_count")
 def _contains_count(text, p, task):
+    """``term``: how many times one term occurs. ``terms``: how many of the
+    listed terms occur at least once (each matched as for contains_any)."""
     t = strip_thinking(text)
+    if "terms" in p:
+        hit = [x for x in _terms(p, "terms") if _find(t, x, p)]
+        score, detail = _bounds(len(hit), p)
+        return score, f"{detail} hit={hit[:6]}"
     term = p["term"]
     flags = 0 if p.get("case_sensitive") else re.I
     pat = r"(?<!\w)" + re.escape(term) + r"(?!\w)" if p.get("whole_word", True) else re.escape(term)
