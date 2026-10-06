@@ -73,3 +73,58 @@ def test_space_rejects_tampered_upload(app, tmp_path, example_results):
     p = write_results(doc, tmp_path / "tampered.jsonl")
     msg, *_ = app.handle_upload(str(p))
     assert "rejected" in msg
+
+
+def test_space_reports_a_gpu_function_to_zerogpu(tmp_path):
+    """On ZeroGPU the app must register a @spaces.GPU function before launch;
+    `spaces` then posts /startup-report, without which the Space never starts."""
+    pytest.importorskip("spaces")
+    import socket
+    import subprocess
+    import threading
+    import time
+    import urllib.request
+    from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+
+    reports = []
+
+    class ZeroApi(BaseHTTPRequestHandler):
+        def log_message(self, *a):
+            pass
+
+        def do_POST(self):  # noqa: N802
+            reports.append(self.path)
+            self.send_response(200)
+            self.send_header("Content-Length", "0")
+            self.end_headers()
+
+    api = ThreadingHTTPServer(("127.0.0.1", 0), ZeroApi)
+    threading.Thread(target=api.serve_forever, daemon=True).start()
+    with socket.socket() as s:
+        s.bind(("127.0.0.1", 0))
+        port = s.getsockname()[1]
+    env = {**os.environ, "SPACES_ZERO_GPU": "true", "GRADIO_SERVER_PORT": str(port),
+           "SPACES_ZERO_DEVICE_API_URL": f"http://127.0.0.1:{api.server_address[1]}",
+           "RSOSTB_STORE_DIR": str(tmp_path / "store")}
+    proc = subprocess.Popen([sys.executable, "app.py"], cwd=ROOT / "hf" / "space", env=env,
+                            stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    try:
+        deadline = time.monotonic() + 90
+        while time.monotonic() < deadline and proc.poll() is None:
+            try:
+                no_proxy = urllib.request.build_opener(urllib.request.ProxyHandler({}))
+                with no_proxy.open(f"http://127.0.0.1:{port}/", timeout=2) as resp:
+                    if resp.status == 200:
+                        break
+            except OSError:
+                time.sleep(0.5)
+        assert proc.poll() is None, "the app exited"
+        assert reports == ["/startup-report"]
+    finally:
+        proc.terminate()
+        proc.wait(timeout=10)
+        api.shutdown()
+
+
+def test_space_gpu_check_runs_without_a_gpu(app):
+    assert "GPU" in app.zero_gpu_device()

@@ -8,6 +8,7 @@ max_workers: 1
 request_timeout_seconds: 180
 max_retries: 2
 retry_backoff_seconds: 2.0
+abort_after_consecutive_errors: 10   # stop a run whose model stopped answering (0: never)
 
 generation:
   temperature: 0.0
