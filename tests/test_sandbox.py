@@ -151,3 +151,37 @@ def test_many_concurrent_sandbox_jobs(sandbox):
     with ThreadPoolExecutor(max_workers=16) as pool:
         values = list(pool.map(job, range(48)))
     assert values == [i * 2 for i in range(48)]
+
+
+def test_sandbox_python_skips_interpreters_the_sandbox_user_cannot_reach(tmp_path, monkeypatch):
+    """A venv under a 0700 directory (root's home, a private temp dir) cannot be
+    executed once privileges are dropped; the sandbox must pick another."""
+    import os
+    import sys
+
+    from rsostb.sandbox import process
+
+    private = tmp_path / "private"
+    (private / "bin").mkdir(parents=True)
+    exe = private / "bin" / "python3"
+    exe.symlink_to(sys.executable)
+    private.chmod(0o700)
+    assert not process._usable_by_others(str(exe))
+    monkeypatch.setattr(process.sys, "executable", str(exe))
+    monkeypatch.delenv("RSOSTB_SANDBOX_PYTHON", raising=False)
+    chosen = process.sandbox_python()
+    assert chosen and chosen != str(exe) and process._usable_by_others(chosen)
+    monkeypatch.setenv("RSOSTB_SANDBOX_PYTHON", "/opt/py/bin/python3")
+    assert process.sandbox_python() == "/opt/py/bin/python3"
+    private.chmod(0o755)
+    os.unlink(exe)
+
+
+def test_run_warns_when_the_sandbox_cannot_run_python(monkeypatch, capsys):
+    from rsostb.runner.runner import run_benchmark
+
+    monkeypatch.setenv("RSOSTB_SANDBOX_PYTHON", "/nonexistent/python3")
+    from rsostb.adapters import create_adapter
+
+    run_benchmark(create_adapter("oracle"), categories=["coding_python"], limit_per_category=1, sandbox="process")
+    assert "cannot run a trivial Python program" in capsys.readouterr().err

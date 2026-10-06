@@ -16,6 +16,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import time
 import urllib.error
 import urllib.request
@@ -81,12 +82,33 @@ def is_local_url(url: str) -> bool:
     return host in ("localhost", "127.0.0.1", "::1", "0.0.0.0") or host.endswith(".local")
 
 
+#: Extra patience for HTTP 429 (rate limited): the server is up and will
+#: answer, so waiting is better than recording the task as failed.
+RATE_LIMIT_RETRIES = 8
+RATE_LIMIT_MAX_WAIT = 60.0
+
+
+def _retry_after(exc: urllib.error.HTTPError, detail: str) -> float | None:
+    """Seconds the server asked us to wait: Retry-After, or a JSON retry_after(_seconds)."""
+    header = exc.headers.get("Retry-After") if exc.headers else None
+    if header:
+        try:
+            return float(header)
+        except ValueError:
+            pass
+    m = re.search(r'"retry_after(?:_seconds)?"\s*:\s*([0-9.]+)', detail)
+    return float(m.group(1)) if m else None
+
+
 def http_json(url: str, body: dict[str, Any] | None, headers: dict[str, str], *, timeout: float = 180.0,
               retries: int = 2, backoff: float = 2.0, method: str = "POST") -> dict[str, Any]:
-    """POST JSON with retries on 429/5xx and connection errors (stdlib only)."""
+    """POST JSON with retries on 429/5xx and connection errors (stdlib only).
+    Rate limiting (429) gets up to RATE_LIMIT_RETRIES further tries, waiting as
+    long as the server asks (at least the usual backoff, at most a minute)."""
     data = json.dumps(body).encode("utf-8") if body is not None else None
     last: Exception | None = None
-    for attempt in range(retries + 1):
+    attempt = limited = 0
+    while attempt <= retries:
         req = urllib.request.Request(url, data=data, method=method,
                                      headers={"Content-Type": "application/json", "Accept": "application/json",
                                               "User-Agent": "rsostb", **headers})
@@ -96,6 +118,11 @@ def http_json(url: str, body: dict[str, Any] | None, headers: dict[str, str], *,
         except urllib.error.HTTPError as exc:
             detail = exc.read().decode("utf-8", "replace")[:500]
             last = AdapterError(f"HTTP {exc.code} from {url}: {detail}")
+            if exc.code == 429 and limited < RATE_LIMIT_RETRIES:
+                limited += 1
+                wait = max(_retry_after(exc, detail) or 0.0, backoff * (2 ** min(limited - 1, 4)))
+                time.sleep(min(wait, RATE_LIMIT_MAX_WAIT))
+                continue
             if exc.code not in (408, 409, 425, 429, 500, 502, 503, 504):
                 break
         except (urllib.error.URLError, TimeoutError, ConnectionError) as exc:
@@ -105,4 +132,5 @@ def http_json(url: str, body: dict[str, Any] | None, headers: dict[str, str], *,
             break
         if attempt < retries:
             time.sleep(backoff * (2 ** attempt))
+        attempt += 1
     raise last or AdapterError("request failed")
