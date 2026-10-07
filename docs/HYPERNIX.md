@@ -97,7 +97,20 @@ reply and time out as well. If nothing is answered within
 `wait_after_timeout_seconds` (runner.yaml, 900 s) the run stops — use
 `--checkpoint` to be able to `--resume` it. To give a slow model more time,
 raise both limits (`--request-timeout 900` and `T1_LMSTUDIO_TIMEOUT=900` on the
-server), or lower `--max-tokens`.
+server), or lower `--max-tokens`. The first timeout of a run prints the
+numbers to choose from: how many tokens per second the model has written so
+far, how long a reply of `--max-tokens` takes at that speed, and the
+`--request-timeout` or `--max-tokens` that fits.
+
+Any wait over 30 s prints `still waiting for …` once a minute, and past a
+minute one line on where the hold-up is: T1 not answering at all (restart
+T1), or T1 answering with its backends' state — a backend reported as `not
+answering` while a reply is being written is a one-request-at-a-time model
+server busy with it; one still not answering after the wait is stuck
+(restart it). Before the first task, the short test request gives up after
+`preflight_timeout_seconds` (120 s) with the same diagnosis, rather than
+waiting the full request timeout in silence; the usual cause is a model
+server still writing replies for a run that was stopped.
 
 ## 2. In-process ovens — `hypernix`
 

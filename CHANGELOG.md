@@ -1,6 +1,30 @@
 # Changelog
 
-## Unreleased
+## 1.0.5 — 2026-10-07
+
+### Fixed — "it prints the header, then nothing"
+* **Long waits were silent.** Before the first task a run asks the server
+  for its status and sends a test request, and a slow or stuck server held
+  both without a word: the `hypernix-t1` status lookup used the full request
+  timeout with the SDK's three tries (up to 15 minutes), and the test request
+  up to 5 minutes. The status lookup now gives up after 10 s without
+  retrying; the test request after `preflight_timeout_seconds` (runner.yaml,
+  120 s; it is eight tokens), with the reason; and the run says
+  `checking that the model answers` first.
+* **Any wait now reports itself.** A task, the test request, or the wait for
+  the server after a timeout that takes longer than 30 s prints
+  `still waiting for <task>: 90s (a request gives up after 300s)` every
+  minute, and once, past a minute, whether the server answers at all — for
+  T1, whether T1 itself answers and how it reports its backends (for
+  example `hypernix: not answering, Qwen3-0.6B (did not answer within 10s)`)
+  — so "slow model", "busy model server" and "T1 is down" look different.
+* **A timeout says whether the timeout is too short.** At the first one the
+  run reports how fast replies have come so far and what that means: for
+  example `about 6.5 tokens/s, so one that runs to max_tokens (2048) takes
+  about 315s, longer than the 300s request timeout`, with the
+  `--request-timeout` (and `T1_LMSTUDIO_TIMEOUT`) or `--max-tokens` that
+  fits — or that a full-length reply should fit, so something else held it
+  up.
 
 ### Changed
 * **Manual releases decide the tag by the version input.** `auto` never

@@ -41,6 +41,7 @@ from .base import (
     http_json,
     is_local_url,
     is_timeout,
+    probe,
     sampling,
 )
 
@@ -293,15 +294,47 @@ class HyperNixT1Adapter(ModelAdapter):
                           model=data.get("model"), finish_reason=data.get("finish_reason"))
 
     def server_status(self) -> dict[str, Any]:
+        """``GET /status``, for the server version in the results. Asked with a
+        10 s timeout and no retries: it is metadata, and with the request
+        timeout and the SDK's retries a stuck server held the run before the
+        first task for up to 15 minutes, printing nothing."""
         if self._status is None:
             try:
-                if self._client is not None:
-                    self._status = self._client.call("GET", "/status")
+                transport = getattr(self._client, "transport", None)
+                if self._client is not None and hasattr(transport, "timeout"):
+                    saved, transport.timeout = transport.timeout, 10.0
+                    try:
+                        self._status = self._client.call("GET", "/status", idempotent=False)
+                    finally:
+                        transport.timeout = saved
                 else:
                     self._status = http_json(self.base_url + "/status", None, {}, timeout=10, retries=0, method="GET")
             except Exception:
                 self._status = {}
         return self._status
+
+    def health(self) -> str | None:
+        """Whether T1 answers, and what it says about the backends behind it."""
+        answered, detail = probe(self.base_url + "/health")
+        if not answered:
+            return f"T1 at {self.base_url} is not answering at all ({detail}): restart the T1 server"
+        msg = f"T1 at {self.base_url} answers, so the model server behind it is slow or busy"
+        key = self._key()
+        try:
+            rows = (http_json(self.base_url + "/inference/backends", None,
+                              {"Authorization": f"Bearer {key}"} if key else {},
+                              timeout=20, retries=0, method="GET") or {}).get("backends") or []
+        except AdapterError:
+            rows = []
+        parts = []
+        for r in rows:
+            part = f"{r.get('name', '?')}: {'up' if r.get('reachable') else 'not answering'}"
+            if r.get("model_id"):
+                part += f", {r['model_id']}"
+            if not r.get("reachable") and r.get("detail"):
+                part += f" ({str(r['detail'])[:120]})"
+            parts.append(part)
+        return msg + (f"; T1 reports its backends as {'; '.join(parts)}" if parts else "")
 
     def describe(self):
         st = self.server_status()
