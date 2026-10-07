@@ -9,7 +9,14 @@ name: release
 #     except that instead of uploading it asks PyPI for an upload token and
 #     throws it away. That proves PyPI trusts this workflow, repository and
 #     environment, without publishing anything.
-#   * Run manually with publish=pypi from a vX.Y.Z tag: publish.
+#   * Run manually with publish=pypi: publish. The version input decides the tag:
+#       auto    never creates a tag. It publishes into the GitHub release
+#               v<RUNNER_VERSION> made beforehand: one that has its tag and
+#               no files yet. Without one, the run stops and says so.
+#       vX.Y.Z  must equal RUNNER_VERSION. An existing tag is used; otherwise
+#               the run creates it on the commit it verified and built, just
+#               before the upload, and the release with the files after it.
+#     Either way the tag's commit must declare that RUNNER_VERSION.
 #
 # The PyPI trusted publisher must name: owner trail-b1az3r, repository
 # RSOSTBTEST, workflow release.yml, environment pypi (or the repository
@@ -26,7 +33,7 @@ on:
         options: [validate, pypi]
         default: validate
       version:
-        description: "Release tag/version: auto selects the highest compatible version, or enter vX.Y.Z"
+        description: "auto = publish into the existing empty release with tag v<RUNNER_VERSION> (creates no tag); vX.Y.Z = that version, creating its tag on this commit if there is none"
         required: true
         type: string
         default: auto
@@ -48,6 +55,7 @@ jobs:
       tag: ${{ steps.plan.outputs.tag }}
       ref: ${{ steps.plan.outputs.ref }}
       sha: ${{ steps.plan.outputs.sha }}
+      create_tag: ${{ steps.plan.outputs.create_tag }}
     steps:
       - uses: actions/checkout@v4
         with:
@@ -57,70 +65,93 @@ jobs:
         env:
           REQUESTED: ${{ inputs.publish }}
           REQUESTED_VERSION: ${{ inputs.version }}
+          GH_TOKEN: ${{ github.token }}
         run: |
-          source_version=$(python3 -c "import re; print(re.search(r'^RUNNER_VERSION = \"([^\"]+)\"', open('src/rsostb/version.py').read(), re.M).group(1))")
+          set -euo pipefail
+          # RUNNER_VERSION as declared at a commit: what a build of that commit is called.
+          runner_version() {
+            git show "$1:src/rsostb/version.py" | python3 -c 'import re, sys; print(re.search(r"^RUNNER_VERSION = \"([^\"]+)\"", sys.stdin.read(), re.M).group(1))'
+          }
+          stop() { echo "::error::$1"; printf '### Release stopped\n\n%s\n' "$1" >> "$GITHUB_STEP_SUMMARY"; exit 1; }
+          has_tag() { git rev-parse -q --verify "refs/tags/$1" >/dev/null; }
+
           package=$(python3 -c "import tomllib; print(tomllib.load(open('pyproject.toml', 'rb'))['project']['name'])")
-
-          # GitHub workflow_dispatch has no tag ref, so allow:
-          #   - an explicit vX.Y.Z tag/version
-          #   - auto, which selects the highest semver between RUNNER_VERSION
-          #     and the existing vX.Y.Z tags.
-          highest_tag=$(git tag --list 'v*.*.*' --sort=-version:refname | head -n 1 || true)
-
-          if [ "$REQUESTED_VERSION" = "auto" ] || [ -z "$REQUESTED_VERSION" ]; then
-            if [ -n "$highest_tag" ]; then
-              tag_version="${highest_tag#v}"
-              highest_version=$(printf '%s\n%s\n' "$source_version" "$tag_version" | sort -V | tail -n 1)
-            else
-              highest_version="$source_version"
-            fi
-            version="$highest_version"
-            selected_tag="v$version"
-          else
-            selected_tag="${REQUESTED_VERSION#v}"
-            version="$selected_tag"
-            selected_tag="v$version"
-          fi
-
-          # The package itself is built from RUNNER_VERSION, so publishing a
-          # manually selected version is only valid when it matches the source.
-          if [ "$version" != "$source_version" ]; then
-            echo "::error::Selected version v$version does not match RUNNER_VERSION=$source_version in src/rsostb/version.py. Update RUNNER_VERSION or select auto after updating it."
-            exit 1
-          fi
+          here=$(git rev-parse --short "$GITHUB_SHA")
+          source_version=$(runner_version "$GITHUB_SHA")
+          requested="${REQUESTED_VERSION:-auto}"
+          create_tag=false
+          how=""
 
           if [ "$GITHUB_EVENT_NAME" = "push" ]; then
             mode=publish
-            selected_tag="$GITHUB_REF_NAME"
-            version="${GITHUB_REF_NAME#v}"
-            if [ "$version" != "$source_version" ]; then
-              echo "::error::Tag $GITHUB_REF_NAME does not match RUNNER_VERSION=$source_version (src/rsostb/version.py)."
-              exit 1
-            fi
-          elif [ "$REQUESTED" = "pypi" ]; then
-            mode=publish
+            tag="$GITHUB_REF_NAME"
+            ref="$tag"
+            how="pushed"
           else
-            mode=validate
+            if [ "$REQUESTED" = "pypi" ]; then mode=publish; else mode=validate; fi
+            if [ "$requested" = "auto" ]; then
+              # auto never creates a tag: it publishes into the release made for
+              # this version on GitHub, which has its tag and no files yet.
+              tag="v$source_version"
+              create="Create it on GitHub (Releases > Draft a new release > tag $tag on a commit whose RUNNER_VERSION is $source_version > Publish release), or run with version $tag to have this workflow create the tag."
+              if ! release=$(gh api "repos/$GITHUB_REPOSITORY/releases/tags/$tag" 2>/dev/null); then
+                problem="version auto publishes only into an existing release, and there is no published GitHub release $tag. $create"
+              elif [ "$(jq '.assets | length' <<<"$release")" != 0 ]; then
+                problem="release $tag already has files: it has been published. Bump RUNNER_VERSION for a new release."
+              elif ! has_tag "$tag"; then
+                problem="release $tag has no tag $tag in the repository. $create"
+              else
+                problem=""
+              fi
+              if [ -z "$problem" ]; then
+                ref="$tag"
+                how="existing empty release"
+              elif [ "$mode" = publish ]; then
+                stop "$problem"
+              else
+                echo "::warning::$problem (a validate run checks commit $here instead)"
+                ref="$GITHUB_SHA"
+                how="none yet; a publish run with auto would stop"
+              fi
+            else
+              version="${requested#v}"
+              [[ "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]] || stop "version must be auto or vX.Y.Z, not '$requested'."
+              tag="v$version"
+              [ "$version" = "$source_version" ] || stop "You asked for $tag, but RUNNER_VERSION on $here is $source_version. Set RUNNER_VERSION = \"$version\" in src/rsostb/version.py first, or run from the commit that has it."
+              if has_tag "$tag"; then
+                ref="$tag"
+                how="existing tag"
+              else
+                ref="$GITHUB_SHA"
+                if [ "$mode" = publish ]; then
+                  create_tag=true
+                  how="created by this run on $here"
+                else
+                  how="none yet; a publish run would create it on $here"
+                fi
+              fi
+            fi
           fi
 
-          # Check out the tag when it exists. A validate run normally comes
-          # before the tag does, so it builds the commit it was started from.
-          if git rev-parse -q --verify "refs/tags/$selected_tag" >/dev/null; then
-            ref="$selected_tag"
-          else
-            ref="$GITHUB_SHA"
+          sha=$(git rev-parse "${ref}^{commit}")
+          version="${tag#v}"
+          built_version=$(runner_version "$sha")
+          [ "$built_version" = "$version" ] || stop "$tag is on ${sha:0:7}, where RUNNER_VERSION is $built_version, not $version, so its package would be $built_version. Delete the release and the tag $tag, and make them again on a commit whose RUNNER_VERSION is $version."
+          if [ "$mode" = publish ] && [ "$(curl -s -o /dev/null -w '%{http_code}' "https://pypi.org/pypi/$package/$version/json")" = 200 ]; then
+            stop "$package $version is already on PyPI, which never takes the same version twice. Bump RUNNER_VERSION."
           fi
 
           {
             echo "mode=$mode"
             echo "version=$version"
             echo "package=$package"
-            echo "tag=$selected_tag"
+            echo "tag=$tag"
             echo "ref=$ref"
             # The commit itself: GitHub refuses a tag name as a release's target_commitish.
-            echo "sha=$(git rev-parse "${ref}^{commit}")"
+            echo "sha=$sha"
+            echo "create_tag=$create_tag"
           } >> "$GITHUB_OUTPUT"
-          echo "### Release plan: **$mode** $package $version using tag \`$selected_tag\` (source: $source_version; latest tag: ${highest_tag:-none})" >> "$GITHUB_STEP_SUMMARY"
+          echo "### Release plan: **$mode** $package $version · tag \`$tag\` ($how) · commit \`${sha:0:7}\`" >> "$GITHUB_STEP_SUMMARY"
 
   verify:
     needs: plan
@@ -162,6 +193,7 @@ jobs:
       url: https://pypi.org/project/${{ needs.plan.outputs.package }}/
     permissions:
       id-token: write          # trusted publishing; no API token stored
+      contents: write          # to create the tag of an explicit new version
     env:
       MODE: ${{ needs.plan.outputs.mode }}
       VERSION: ${{ needs.plan.outputs.version }}
@@ -254,6 +286,19 @@ jobs:
                     "use, exactly as it would have on the first release. The name is now reserved for you.")
           EOF
 
+      - name: Create the tag (an explicit new version only; auto never creates one)
+        if: env.MODE == 'publish' && needs.plan.outputs.create_tag == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ needs.plan.outputs.tag }}
+          SHA: ${{ needs.plan.outputs.sha }}
+        run: |
+          # On the commit verify tested and build packaged, before anything is
+          # published, so the release on PyPI always has its tag. A tag made
+          # with the workflow token does not start another release run.
+          gh api "repos/$GITHUB_REPOSITORY/git/refs" -f ref="refs/tags/$TAG" -f sha="$SHA" >/dev/null
+          echo "Created tag $TAG on $SHA." | tee -a "$GITHUB_STEP_SUMMARY"
+
       - name: Publish to PyPI
         if: env.MODE == 'publish'
         uses: pypa/gh-action-pypi-publish@release/v1
@@ -301,10 +346,11 @@ jobs:
           path: dist
       - uses: softprops/action-gh-release@v2
         with:
-          # Named explicitly: a manual publish runs from a branch, and this
-          # creates the tag on the commit that was built. target_commitish is
-          # that commit's SHA: updating a release created by hand first fails
-          # with "target_commitish invalid" when given a tag name (1.0.2).
+          # The tag exists by now (pushed, made by hand with an empty release,
+          # or created by the pypi job). This creates the release if there is
+          # none and attaches the files. target_commitish is the commit's SHA:
+          # updating a release made by hand fails with "target_commitish
+          # invalid" when given a tag name (1.0.2, 1.0.3).
           tag_name: ${{ needs.plan.outputs.tag }}
           target_commitish: ${{ needs.plan.outputs.sha }}
           files: dist/*
