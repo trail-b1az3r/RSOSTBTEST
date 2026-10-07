@@ -240,7 +240,7 @@ def _rescore(doc, tasks, rep: ValidationReport, execution: bool, sandbox: str, b
     judged = bool((doc.get("run") or {}).get("judge"))
     for tr in doc["task_results"]:
         task = tasks[tr["task_id"]]
-        if tr["status"] in ("error", "unavailable") or (judged and task.requires_judge):
+        if tr["status"] in TERMINAL_ZERO or (judged and task.requires_judge):
             rep.rescore_skipped += 1
             continue
         needs_exec = task.requires_code_execution or task.evaluation_type == "agentic" or (

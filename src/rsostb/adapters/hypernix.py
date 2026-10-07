@@ -32,7 +32,17 @@ from pathlib import Path
 from typing import Any
 from urllib.parse import urlparse
 
-from .base import AdapterError, Generation, ModelAdapter, env_secret, http_json, is_local_url, sampling
+from .base import (
+    AdapterError,
+    Generation,
+    ModelAdapter,
+    RequestTimeout,
+    env_secret,
+    http_json,
+    is_local_url,
+    is_timeout,
+    sampling,
+)
 
 DEFAULT_T1_URL = "http://127.0.0.1:8000"
 KEY_ENV_VARS = ("RSOSTB_HYPERNIX_T1_KEY", "HYPERNIX_T1_KEY", "T1_KEY")
@@ -195,6 +205,9 @@ class HyperNixT1Adapter(ModelAdapter):
     def _failed(self, path: str, exc: Exception) -> AdapterError:
         msg = f"T1 {path} failed: {exc}"
         text = str(exc)
+        if is_timeout(exc):
+            # The SDK's "timed out", or T1's own 503 when its model backend did not answer in time.
+            return RequestTimeout(msg)
         if not self._key() and ("AUTH_" in text or "credential" in text or text.startswith(("HTTP 401", "HTTP 403"))):
             msg += f" ({self._no_key_hint()})"
         return AdapterError(msg)
@@ -210,7 +223,7 @@ class HyperNixT1Adapter(ModelAdapter):
         try:
             return http_json(self.base_url + path, body, headers, timeout=self.timeout, retries=self.retries)
         except AdapterError as exc:
-            if key:
+            if key or isinstance(exc, RequestTimeout):
                 raise
             raise self._failed(path, exc) from exc
 
@@ -226,7 +239,7 @@ class HyperNixT1Adapter(ModelAdapter):
             return http_json(self.base_url + path, None, headers, timeout=min(self.timeout, 30.0), retries=0,
                              method="GET")
         except AdapterError as exc:
-            if key:
+            if key or isinstance(exc, RequestTimeout):
                 raise
             raise self._failed(path, exc) from exc
 

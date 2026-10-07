@@ -3,7 +3,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from ..adapters.base import AdapterError, ModelAdapter
+from ..adapters.base import AdapterError, ModelAdapter, RequestTimeout
 from ..sandbox.base import SandboxUnavailable
 from .environments import ToolEnvironment
 from .protocol import parse_turn, results_message
@@ -29,8 +29,10 @@ def run_episode(adapter: ModelAdapter, task, messages: list[dict[str, str]], env
         try:
             gen = call(transcript, task=task, step=step, **gen_kwargs)
         except AdapterError as exc:
-            stopped = "adapter_error"
+            stopped = "timeout" if isinstance(exc, RequestTimeout) else "adapter_error"
             usage["error"] = str(exc)[:500]
+            if isinstance(exc, RequestTimeout):
+                usage["timed_out"] = True
             break
         usage["turns"] += 1
         usage["latency_seconds"] += gen.latency
