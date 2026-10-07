@@ -20,13 +20,30 @@ rsostb benchmark --adapter hypernix-t1 --model t1-small \
     --base-url https://t1.example.internal --output t1-small.jsonl
 ```
 
+If this machine is already set up with waiter, neither is needed: the
+adapter connects to the server `waiter serv -A -I <server> -K <key>` saved and
+sends the key saved with it.
+
+```bash
+waiter serv -A -I http://127.0.0.1:8001 -K '<key>'
+rsostb benchmark --adapter hypernix-t1 --model t1-small --output t1-small.jsonl
+```
+
 | Option | Default |
 |---|---|
-| `--base-url` | `$HYPERNIX_T1_URL`, else `http://127.0.0.1:8000` |
-| `--api-key-env` | first set of `RSOSTB_HYPERNIX_T1_KEY`, `HYPERNIX_T1_KEY`, `T1_KEY` |
+| `--base-url` | `$HYPERNIX_T1_URL`, else the server waiter saved, else `http://127.0.0.1:8000` |
+| `--api-key-env` | first set of `RSOSTB_HYPERNIX_T1_KEY`, `HYPERNIX_T1_KEY`, `T1_KEY`; with none set, waiter's saved key |
 | `--adapter-option timeout=…` | 300 s |
 | `--adapter-option use_sdk=false` | force the standard-library client |
 | `--adapter-option backend=hypernix` | require answers from the HyperNix runner (`lmstudio` also accepted) |
+
+Waiter's key is only ever sent to the server it was saved for: with
+`--base-url` naming another server, set a key variable instead (the error
+says which server waiter's key belongs to). Waiter's config is read from
+`~/.hypernix/waiter/waiter.config.jsonl` (`RSOSTB_WAITER_CONFIG` to point
+elsewhere, `off` to ignore it); one saved with `waiter serv -E` is opened
+when the `hypernix` package is installed, and one locked with `-e` needs
+`HNX_WAITER_PASSWORD`. The key never appears in results.
 
 **Results always describe the model that was asked for.** Every request
 sends `allow_fallback: false`, so the server may not cascade to a different

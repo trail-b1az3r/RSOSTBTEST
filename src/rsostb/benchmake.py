@@ -534,7 +534,7 @@ def build_parser() -> argparse.ArgumentParser:
     run.add_argument("--reports", action="store_true", help="also write HTML/Markdown reports per model")
     run.add_argument("-q", "--quiet", action="store_true", help="no per-task progress")
     be = p.add_argument_group("backends")
-    be.add_argument("--t1-url", default=None, help="HyperNix T1 server (default $HYPERNIX_T1_URL or http://127.0.0.1:8000)")
+    be.add_argument("--t1-url", default=None, help="HyperNix T1 server (default $HYPERNIX_T1_URL, the server `waiter serv` saved, or http://127.0.0.1:8000)")
     be.add_argument("--gpu-layers", type=int, default=-1, help="layers on the GPU for llama.cpp backends (-1: all)")
     be.add_argument("--ctx", type=int, default=0, help="context length for llama.cpp backends (0: default)")
     be.add_argument("--server-timeout", type=float, default=1800.0,

@@ -9,8 +9,10 @@ HyperNix (https://github.com/trail-b1az3r/HyperNix-pip):
   used instead (mTLS, retries, key sealing). Fallback down the plan's cascade
   is always disabled (``allow_fallback: false``) and a response that reports
   a substituted model is treated as an error, so results always describe the
-  model that was asked for. T1 serves ``/inference`` from one of two
-  backends — ``hypernix`` (the server's own runner, for the model it has
+  model that was asked for. Without ``--base-url`` / ``HYPERNIX_T1_URL`` it
+  connects to the server ``waiter serv -A -I <server> -K <key>`` saved, and
+  without a key variable it sends waiter's saved key (to that server only).
+  T1 serves ``/inference`` from one of two backends — ``hypernix`` (the server's own runner, for the model it has
   loaded) or ``lmstudio`` — and names it in ``backend_name``; every task
   records it, and ``backend=hypernix`` (or ``lmstudio``) requires it.
 * ``hypernix`` — an in-process HyperNix **oven** (``hypernix.old_oven`` or
@@ -21,9 +23,14 @@ See docs/HYPERNIX.md.
 """
 from __future__ import annotations
 
+import json
 import os
 import time
+import warnings
+from dataclasses import dataclass
+from pathlib import Path
 from typing import Any
+from urllib.parse import urlparse
 
 from .base import AdapterError, Generation, ModelAdapter, env_secret, http_json, is_local_url, sampling
 
@@ -31,6 +38,95 @@ DEFAULT_T1_URL = "http://127.0.0.1:8000"
 KEY_ENV_VARS = ("RSOSTB_HYPERNIX_T1_KEY", "HYPERNIX_T1_KEY", "T1_KEY")
 #: The backends a T1 server can answer /inference from (``backend_name``).
 T1_BACKENDS = ("hypernix", "lmstudio")
+#: How HyperNix's waiter marks a password-locked config (``waiter serv -e``).
+_WAITER_LOCK_PREFIX = "RVLOCK1:"
+
+
+@dataclass
+class WaiterServer:
+    """The T1 server and key ``waiter serv -A -I <server> -K <key>`` saved."""
+
+    url: str
+    key: str | None
+    path: Path
+
+    def __repr__(self) -> str:  # never the key, not even masked
+        return f"WaiterServer(url={self.url!r}, path={str(self.path)!r}, key={'set' if self.key else 'none'})"
+
+
+def waiter_config_path() -> Path | None:
+    """Where waiter keeps this machine's T1 connection: ``RSOSTB_WAITER_CONFIG``
+    (``off`` to ignore waiter), else ``~/.hypernix/waiter/waiter.config.jsonl``."""
+    raw = os.environ.get("RSOSTB_WAITER_CONFIG")
+    if raw is None:
+        return Path.home() / ".hypernix" / "waiter" / "waiter.config.jsonl"
+    raw = raw.strip()
+    return None if raw.lower() in ("", "0", "off", "none", "false") else Path(raw).expanduser()
+
+
+def _open_sealed_waiter_config(path: Path, raw: str) -> dict[str, Any] | None:
+    """A config saved with ``-E`` (waiter's per-machine key) or ``-e``
+    (password, from ``HNX_WAITER_PASSWORD``), opened by HyperNix itself."""
+    try:
+        from hypernix.waiter.local_config import WaiterConfigStore  # type: ignore
+    except Exception:
+        return None
+    if not raw.startswith(_WAITER_LOCK_PREFIX) and not (path.parent / ".master.key").is_file():
+        return None  # encrypted on another machine; trying would create a master key here
+    try:
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore")
+            cfg = WaiterConfigStore(path, password_provider=lambda: os.environ.get("HNX_WAITER_PASSWORD")).load()
+    except Exception:
+        return None
+    return cfg.to_dict() if cfg is not None else None
+
+
+def _waiter_base_url(cfg: dict[str, Any]) -> str:
+    """The server URL waiter connects to, built the way ``waiter`` builds it."""
+    server = str(cfg["server"]).strip()
+    if not server.startswith(("http://", "https://")):
+        server = f"{'http' if cfg.get('local_only') else 'https'}://{server}"
+    port = cfg.get("port")
+    if port and f":{port}" not in server:
+        server = f"{server}:{port}"
+    return server.rstrip("/")
+
+
+def waiter_server() -> WaiterServer | None:
+    """The T1 server (and key) saved by ``waiter serv -A -I <server> -K <key>``
+    on this machine, or None. Never raises: a config that cannot be read is
+    no config."""
+    path = waiter_config_path()
+    if path is None or not path.is_file():
+        return None
+    try:
+        raw = path.read_text(encoding="utf-8").strip()
+    except OSError:
+        return None
+    try:
+        cfg = json.loads(raw)
+    except ValueError:
+        cfg = _open_sealed_waiter_config(path, raw)
+    if not isinstance(cfg, dict) or not cfg.get("server"):
+        return None
+    return WaiterServer(_waiter_base_url(cfg), str(cfg.get("key") or "") or None, path)
+
+
+def same_server(a: str, b: str) -> bool:
+    """Whether two base URLs name the same T1 server (loopback names and
+    default ports are equivalent)."""
+    def norm(url: str) -> tuple:
+        p = urlparse(url)
+        host = (p.hostname or "").lower()
+        if host in ("localhost", "127.0.0.1", "::1"):
+            host = "loopback"
+        try:
+            port = p.port or {"http": 80, "https": 443}.get(p.scheme)
+        except ValueError:
+            port = None
+        return p.scheme, host, port, p.path.rstrip("/")
+    return norm(a) == norm(b)
 
 
 def hypernix_version() -> str | None:
@@ -57,8 +153,16 @@ class HyperNixT1Adapter(ModelAdapter):
         #: When set, every answer must come from this T1 backend.
         self.backend = backend
         self._preflight_done = False
-        self.base_url = (base_url or os.environ.get("HYPERNIX_T1_URL") or DEFAULT_T1_URL).rstrip("/")
+        # Server: --base-url, $HYPERNIX_T1_URL, the server `waiter serv` saved, the default.
+        # Key: the key variable, else waiter's saved key, and only for the server it was saved for.
+        self._waiter = waiter_server()
+        self.base_url = (base_url or os.environ.get("HYPERNIX_T1_URL")
+                         or (self._waiter.url if self._waiter else None) or DEFAULT_T1_URL).rstrip("/")
         self.api_key_env = api_key_env or next((k for k in KEY_ENV_VARS if os.environ.get(k)), KEY_ENV_VARS[1])
+        self._waiter_key = None
+        if (not env_secret(self.api_key_env) and self._waiter and self._waiter.key
+                and same_server(self._waiter.url, self.base_url)):
+            self._waiter_key = self._waiter.key
         self.timeout, self.retries = timeout, retries
         self.requires_network = not is_local_url(self.base_url)
         self._client = None
@@ -67,30 +171,64 @@ class HyperNixT1Adapter(ModelAdapter):
             try:
                 from hypernix.t1sdk import T1Client  # type: ignore
 
-                self._client = T1Client(self.base_url, credential=env_secret(self.api_key_env), timeout=timeout)
+                self._client = T1Client(self.base_url, credential=self._key(), timeout=timeout)
             except Exception:
                 self._client = None
         self._status: dict[str, Any] | None = None
+
+    def _key(self) -> str | None:
+        return env_secret(self.api_key_env) or self._waiter_key
+
+    def _no_key_hint(self) -> str:
+        """Why no key was sent, and how to give one."""
+        others = ", ".join(k for k in KEY_ENV_VARS if k != self.api_key_env)
+        hint = (f"no T1 key was sent: set {self.api_key_env} (or {others}), "
+                "or save one with `waiter serv -A -I <server> -K <key>`")
+        w = self._waiter
+        if w is not None and w.key and not same_server(w.url, self.base_url):
+            hint += (f"; waiter's saved key is for {w.url}, not {self.base_url}, so it was not used "
+                     f"(pass --base-url {w.url} to use it)")
+        elif w is not None and not w.key:
+            hint += f"; waiter's config ({w.path}) has a server but no key"
+        return hint
+
+    def _failed(self, path: str, exc: Exception) -> AdapterError:
+        msg = f"T1 {path} failed: {exc}"
+        text = str(exc)
+        if not self._key() and ("AUTH_" in text or "credential" in text or text.startswith(("HTTP 401", "HTTP 403"))):
+            msg += f" ({self._no_key_hint()})"
+        return AdapterError(msg)
 
     def _post(self, path: str, body: dict[str, Any]) -> dict[str, Any]:
         if self._client is not None:
             try:
                 return self._client.call("POST", path, body=body, auth=True)
             except Exception as exc:  # T1Error hierarchy
-                raise AdapterError(f"T1 {path} failed: {exc}") from exc
-        key = env_secret(self.api_key_env)
+                raise self._failed(path, exc) from exc
+        key = self._key()
         headers = {"Authorization": f"Bearer {key}"} if key else {}
-        return http_json(self.base_url + path, body, headers, timeout=self.timeout, retries=self.retries)
+        try:
+            return http_json(self.base_url + path, body, headers, timeout=self.timeout, retries=self.retries)
+        except AdapterError as exc:
+            if key:
+                raise
+            raise self._failed(path, exc) from exc
 
     def _get(self, path: str) -> dict[str, Any]:
         if self._client is not None:
             try:
                 return self._client.call("GET", path, auth=True)
             except Exception as exc:
-                raise AdapterError(f"T1 {path} failed: {exc}") from exc
-        key = env_secret(self.api_key_env)
+                raise self._failed(path, exc) from exc
+        key = self._key()
         headers = {"Authorization": f"Bearer {key}"} if key else {}
-        return http_json(self.base_url + path, None, headers, timeout=min(self.timeout, 30.0), retries=0, method="GET")
+        try:
+            return http_json(self.base_url + path, None, headers, timeout=min(self.timeout, 30.0), retries=0,
+                             method="GET")
+        except AdapterError as exc:
+            if key:
+                raise
+            raise self._failed(path, exc) from exc
 
     def backends(self) -> list[dict[str, Any]]:
         """``GET /inference/backends``: what the server can answer from, probed."""
