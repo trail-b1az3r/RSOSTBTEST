@@ -184,3 +184,105 @@ def test_request_timeout_reaches_the_adapter():
     assert _make_adapter(args()).timeout == 300.0                   # runner.yaml request_timeout_seconds
     assert _make_adapter(args(request_timeout=42)).timeout == 42.0
     assert _make_adapter(args(adapter_option=["timeout=7"], request_timeout=42)).timeout == 7.0
+
+
+class Writer(ModelAdapter):
+    """Answers in ``delay`` seconds with ``tokens`` output tokens; tasks listed
+    in ``slow`` time out; probes (the test request) take ``probe_delay``."""
+
+    name = "writer"
+
+    def __init__(self, delay=0.0, tokens=100, slow=(), probe_delay=0.0, timeout=60.0, health="the server answers"):
+        super().__init__("writer")
+        self.delay, self.tokens, self.slow, self.probe_delay = delay, tokens, set(slow), probe_delay
+        self.timeout, self._health = timeout, health
+
+    def health(self):
+        return self._health
+
+    def chat(self, messages, **kw):
+        if messages == PREFLIGHT_MESSAGES:
+            threading.Event().wait(self.probe_delay)
+            return Generation(text="OK")
+        task = kw.get("task")
+        if task is not None and task.id in self.slow:
+            raise RequestTimeout(f"no reply from http://model within {self.timeout:g}s")
+        threading.Event().wait(self.delay)
+        return Generation(text="ANSWER: 0", usage={"output_tokens": self.tokens})
+
+
+@pytest.fixture()
+def quick_reports(monkeypatch):
+    monkeypatch.setattr(runner_mod, "WAIT_REPORT_AFTER", 0.05)
+    monkeypatch.setattr(runner_mod, "WAIT_REPORT_EVERY", 0.05)
+    monkeypatch.setattr(runner_mod, "WAIT_DIAGNOSE_AFTER", 0.1)
+
+
+def test_a_slow_reply_says_what_the_run_is_waiting_for(capsys, quick_reports):
+    a = Writer(delay=0.4, health="T1 at http://t1 answers, so the model server behind it is slow or busy")
+    run_benchmark(a, categories=["math"], limit_per_category=1, progress=print_progress)
+    err = capsys.readouterr().err
+    assert "checking that the model answers" in err
+    assert "still waiting for math-" in err and "(a request gives up after 60s)" in err
+    assert "T1 at http://t1 answers, so the model server behind it is slow or busy" in err
+    assert err.count("model server behind it") == 1                     # asked once per wait, not every line
+
+
+def test_a_test_request_that_never_comes_back_stops_the_run_quickly(monkeypatch):
+    real = runner_mod.load_runner_config
+    monkeypatch.setattr(runner_mod, "load_runner_config", lambda: {**real(), "preflight_timeout_seconds": 0.2})
+    a = Writer(probe_delay=5, health="T1 at http://t1 is not answering at all (no answer within 5s)")
+    t0 = runner_mod.time.monotonic()
+    with pytest.raises(RunAborted, match=r"within 0.2s, so nothing was run \(T1 at http://t1 is not answering at all"):
+        run_benchmark(a, categories=["math"], limit_per_category=1)
+    assert runner_mod.time.monotonic() - t0 < 3
+
+
+def test_a_timeout_is_explained_by_how_fast_the_model_writes(capsys, bench):
+    # 100 tokens in ~0.1 s is ~1000 tokens/s: a 2048-token reply needs ~2 s, past a 1 s timeout.
+    order = run_benchmark(Writer(), categories=["math"], limit_per_category=6, check_model=False)["task_results"]
+    slow = sorted(t["task_id"] for t in order)[-1]
+    capsys.readouterr()
+    a = Writer(delay=0.1, tokens=100, slow=[slow], timeout=1.0)
+    run_benchmark(a, categories=["math"], limit_per_category=6, check_model=False, progress=print_progress,
+                  generation={"max_tokens": 2048})
+    err = capsys.readouterr().err
+    assert "tokens/s, so one that runs to max_tokens (2048) takes about" in err
+    assert "longer than the 1s request timeout" in err and "--request-timeout" in err and "--max-tokens" in err
+
+
+def test_speed_hint_when_the_timeout_is_not_the_problem():
+    from rsostb.runner.runner import speed_hint
+
+    assert speed_hint(50, 1.0, 2048, 300) is None                    # too little to go on
+    hint = speed_hint(4000, 100.0, 2048, 300)                        # 40 tokens/s: 2048 in ~51 s
+    assert "within the 300s request timeout" in hint and "held up by something else" in hint
+    hint = speed_hint(1000, 200.0, 2048, 300)                        # 5 tokens/s: 2048 in ~410 s
+    assert "--request-timeout 540" in hint and "--max-tokens 1024" in hint
+
+
+def test_t1_health_says_which_part_is_not_answering(mock_server):
+    from rsostb.adapters.hypernix import HyperNixT1Adapter
+
+    url, handler = mock_server
+    handler.replies["backends"] = [
+        {"name": "hypernix", "reachable": False, "model_id": "Qwen3-0.6B", "detail": "did not answer within 10s"},
+        {"name": "lmstudio", "reachable": False, "detail": "LM Studio is off"}]
+    h = HyperNixT1Adapter("Qwen3-0.6B", base_url=url, use_sdk=False).health()
+    assert h.startswith(f"T1 at {url} answers")
+    assert "hypernix: not answering, Qwen3-0.6B (did not answer within 10s)" in h
+    gone = HyperNixT1Adapter("m", base_url="http://127.0.0.1:1", use_sdk=False).health()
+    assert gone.startswith("T1 at http://127.0.0.1:1 is not answering at all")
+
+
+def test_the_speed_is_explained_at_the_first_timeout_with_enough_to_go_on(capsys):
+    run_benchmark(Writer(), categories=["math"], limit_per_category=8, check_model=False, progress=print_progress)
+    ran = [line.split("]")[1].split()[0] for line in capsys.readouterr().err.replace("\r", "\n").splitlines()
+           if line.startswith("[")]
+    # The first timeout comes after one 100-token reply (too little to judge), the second after five.
+    a = Writer(delay=0.1, tokens=100, slow=[ran[1], ran[6]], timeout=1.0)
+    run_benchmark(a, categories=["math"], limit_per_category=8, check_model=False, progress=print_progress,
+                  generation={"max_tokens": 2048})
+    err = capsys.readouterr().err
+    assert err.count("tokens/s, so one that runs to max_tokens (2048)") == 1
+    assert err.index("tokens/s") > err.index(ran[6])
