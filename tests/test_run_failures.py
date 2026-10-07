@@ -122,3 +122,30 @@ def test_an_episode_cut_short_by_a_request_error_keeps_the_run_valid():
     (tr,) = doc["task_results"]
     assert tr["status"] == "error" and tr["credit"] == 0.0
     assert not any("cannot carry credit" in e for e in validate_results(doc).errors)
+
+
+def test_t1_run_uses_the_connection_waiter_saved(tmp_path, mock_server, monkeypatch, capsys):
+    """`waiter serv -A -I <server> -K <key>` then `rsostb benchmark --adapter hypernix-t1`:
+    no --base-url and no key variable needed, and the key never lands in the results."""
+    import json
+
+    from rsostb.adapters.hypernix import KEY_ENV_VARS
+
+    url, handler = mock_server
+    handler.replies["require_key"] = "T1_waiter_secret"
+    for var in ("HYPERNIX_T1_URL", *KEY_ENV_VARS):
+        monkeypatch.delenv(var, raising=False)
+    out = tmp_path / "r.jsonl"
+    argv = ["benchmark", "--adapter", "hypernix-t1", "--model", "t1-small", "--categories", "math",
+            "--limit-per-category", "2", "--output", str(out), "--quiet"]
+    # Without waiter's config the run stops at the test request and says how to give a key.
+    assert main([*argv, "--base-url", url]) == 3
+    assert "waiter serv -A -I <server> -K <key>" in capsys.readouterr().err
+    cfg = tmp_path / "waiter.config.jsonl"
+    cfg.write_text(json.dumps({"server": url, "key": "T1_waiter_secret"}) + "\n", encoding="utf-8")
+    monkeypatch.setenv("RSOSTB_WAITER_CONFIG", str(cfg))
+    before = len(handler.seen)
+    assert main(argv) == 0
+    chats = [r for r in handler.seen[before:] if r["path"].endswith("/inference/chat")]
+    assert chats and all(r["auth"] == "Bearer T1_waiter_secret" for r in chats)
+    assert "T1_waiter_secret" not in out.read_text(encoding="utf-8")

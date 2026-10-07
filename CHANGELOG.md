@@ -1,5 +1,18 @@
 # Changelog
 
+## Unreleased
+
+### Fixed
+* **`hypernix-t1` ignored `waiter serv`**: after
+  `waiter serv -A -I <server> -K <key>`, `rsostb benchmark --adapter
+  hypernix-t1` still stopped with `AUTH_MISSING_CREDENTIALS` (no key
+  variable set) and, with a server on any port but 8000, would have connected
+  to the wrong one. The adapter now falls back to the server and key waiter
+  saved, after `--base-url` / `$HYPERNIX_T1_URL` and the key variables. The
+  key is sent only to the server it was saved for; when no key was sent, the
+  error says how to give one and which server waiter's key belongs to.
+  Verified with a real T1 server, `waiter serv` and the HyperNix SDK.
+
 ## 1.0.1 — 2026-10-06
 
 Runner **1.0.1**, benchmark **1.1**, dataset **1.1.0**, scoring **v1**.

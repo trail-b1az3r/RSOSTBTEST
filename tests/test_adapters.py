@@ -1,6 +1,7 @@
 """Model adapters, exercised against an in-process mock server (no network)."""
 from __future__ import annotations
 
+import json
 import sys
 
 import pytest
@@ -8,6 +9,7 @@ import pytest
 from rsostb.adapters import ADAPTERS, create_adapter
 from rsostb.adapters.base import AdapterError
 from rsostb.adapters.baselines import reference_response
+from rsostb.adapters.hypernix import KEY_ENV_VARS, same_server, waiter_server
 
 MSGS = [{"role": "system", "content": "be brief"}, {"role": "user", "content": "ping"}]
 
@@ -125,6 +127,75 @@ def test_hypernix_t1_preflight_catches_an_idle_runner(mock_server):
 def test_hypernix_t1_rejects_an_unknown_backend_option():
     with pytest.raises(AdapterError, match="backend must be one of"):
         create_adapter("hypernix-t1", "t1-small", backend="vllm")
+
+
+def _waiter_saved(tmp_path, monkeypatch, **cfg):
+    """What `waiter serv -A -I <server> -K <key>` leaves behind, and no key variables."""
+    path = tmp_path / "waiter.config.jsonl"
+    path.write_text(json.dumps(cfg) + "\n", encoding="utf-8")
+    monkeypatch.setenv("RSOSTB_WAITER_CONFIG", str(path))
+    for var in ("HYPERNIX_T1_URL", *KEY_ENV_VARS):
+        monkeypatch.delenv(var, raising=False)
+    return path
+
+
+@pytest.mark.parametrize("saved", ["url", "host and port"])
+def test_hypernix_t1_uses_the_server_and_key_waiter_saved(mock_server, tmp_path, monkeypatch, saved):
+    url, handler = mock_server
+    port = int(url.rsplit(":", 1)[1])
+    where = {"server": url} if saved == "url" else {"server": "127.0.0.1", "port": port, "local_only": True}
+    _waiter_saved(tmp_path, monkeypatch, key="T1_waiter_secret", **where)
+    handler.replies["require_key"] = "T1_waiter_secret"
+    a = create_adapter("hypernix-t1", "t1-small")
+    assert a.base_url == url
+    assert a.chat(MSGS).text
+    assert handler.seen[-1]["auth"] == "Bearer T1_waiter_secret"
+    assert "T1_waiter_secret" not in str(a.describe()) + repr(waiter_server())
+
+
+def test_hypernix_t1_key_variable_wins_over_waiter(mock_server, tmp_path, monkeypatch):
+    url, handler = mock_server
+    _waiter_saved(tmp_path, monkeypatch, server=url, key="T1_waiter_secret")
+    monkeypatch.setenv("HYPERNIX_T1_KEY", "T1_env_secret")
+    create_adapter("hypernix-t1", "t1-small").chat(MSGS)
+    assert handler.seen[-1]["auth"] == "Bearer T1_env_secret"
+
+
+def test_hypernix_t1_never_sends_waiters_key_to_another_server(mock_server, tmp_path, monkeypatch):
+    url, handler = mock_server
+    _waiter_saved(tmp_path, monkeypatch, server="http://127.0.0.1:1", key="T1_waiter_secret")
+    handler.replies["require_key"] = "T1_waiter_secret"
+    a = create_adapter("hypernix-t1", "t1-small", base_url=url)
+    with pytest.raises(AdapterError, match=r"waiter's saved key is for http://127\.0\.0\.1:1, not"):
+        a.chat(MSGS)
+    assert handler.seen[-1]["auth"] is None
+
+
+def test_hypernix_t1_without_a_key_says_how_to_give_one(mock_server, monkeypatch):
+    url, handler = mock_server
+    for var in KEY_ENV_VARS:
+        monkeypatch.delenv(var, raising=False)
+    handler.replies["require_key"] = "T1_secret"
+    a = create_adapter("hypernix-t1", "t1-small", base_url=url)
+    with pytest.raises(AdapterError, match=r"HTTP 401.*set HYPERNIX_T1_KEY.*waiter serv -A -I <server> -K <key>"):
+        a.chat(MSGS)
+
+
+def test_waiter_config_that_cannot_be_read_is_ignored(tmp_path, monkeypatch):
+    path = _waiter_saved(tmp_path, monkeypatch, server="http://127.0.0.1:8001", key="k")
+    assert waiter_server().url == "http://127.0.0.1:8001"
+    path.write_text("gAAAAAB-encrypted-elsewhere\n", encoding="utf-8")
+    assert waiter_server() is None and not (tmp_path / ".master.key").exists()
+    monkeypatch.setenv("RSOSTB_WAITER_CONFIG", "off")
+    assert waiter_server() is None
+
+
+def test_same_server():
+    assert same_server("http://localhost:8001", "http://127.0.0.1:8001/")
+    assert same_server("https://t1.example", "https://t1.example:443")
+    assert not same_server("http://127.0.0.1:8001", "http://127.0.0.1:8000")
+    assert not same_server("http://t1.example", "https://t1.example")
+    assert not same_server("https://t1.example", "https://t1.example.attacker.net")
 
 
 def test_command_adapter_text_and_json():

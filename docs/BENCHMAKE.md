@@ -72,7 +72,7 @@ Everything except `-M` is optional; the defaults run the full benchmark.
 | `--sandbox` | `process` | `process`, `docker` or `none` |
 | `--workers`, `--temperature`, `--max-tokens`, `--seed` | the benchmark's | as for `rsostb benchmark` |
 | `--reports` | off | HTML/Markdown reports per model |
-| `--t1-url` | `$HYPERNIX_T1_URL` or `http://127.0.0.1:8000` | T1 server (key from `HYPERNIX_T1_KEY`) |
+| `--t1-url` | `$HYPERNIX_T1_URL`, the server `waiter serv` saved, or `http://127.0.0.1:8000` | T1 server (key from `HYPERNIX_T1_KEY`, else waiter's saved key) |
 | `--gpu-layers` | -1 (all) | llama.cpp GPU layers |
 | `--ctx` | model default | llama.cpp context length |
 | `--server-timeout` | 1800 s | wait for a started server, first-run downloads included |
