@@ -275,7 +275,9 @@ class ProcessSandbox(Sandbox):
 
             exe = argv[0]
             resolved = resolve_toolchain(exe) if not os.path.isabs(exe) and "/" not in exe else exe
-            if self.drop_privileges and exe in ("python", "python3"):
+            # An explicit RSOSTB_SANDBOX_PYTHON applies with or without the
+            # privilege drop; otherwise only `nobody` needs a different one.
+            if exe in ("python", "python3") and (self.drop_privileges or os.environ.get("RSOSTB_SANDBOX_PYTHON")):
                 resolved = sandbox_python()
                 if resolved is None:
                     return ExecResult(None, "", "no Python interpreter that the unprivileged sandbox user can run; "
