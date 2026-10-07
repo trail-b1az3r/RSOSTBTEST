@@ -53,7 +53,8 @@ interpreter. A virtualenv under a private directory (root's home, a 0700
 temp dir) is not reachable, so sandboxed Python uses the first interpreter
 every user can execute: the venv's own, its base interpreter, then the system
 `python3`. The grading worker needs only the standard library. Set
-`RSOSTB_SANDBOX_PYTHON` to choose one explicitly.
+`RSOSTB_SANDBOX_PYTHON` to choose one explicitly; it applies whether or not
+the sandbox drops privileges.
 
 At most one sandboxed program per CPU core runs at a time
 (`RSOSTB_SANDBOX_SLOTS` overrides); more grading workers than cores used to
