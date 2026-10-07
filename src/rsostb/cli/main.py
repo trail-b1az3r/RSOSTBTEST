@@ -144,6 +144,13 @@ def _make_adapter(args):
         options["base_url"] = args.base_url
     if args.api_key_env:
         options["api_key_env"] = args.api_key_env
+    if "timeout" not in options:
+        # Seconds to wait for each reply: --request-timeout, else runner.yaml's request_timeout_seconds.
+        from ..config import load_runner_config
+
+        timeout = getattr(args, "request_timeout", None) or load_runner_config().get("request_timeout_seconds")
+        if timeout:
+            options["timeout"] = float(timeout)
     model = args.model or options.pop("model", None)
     return create_adapter(args.adapter, model, **options)
 
@@ -631,6 +638,9 @@ def build_parser() -> argparse.ArgumentParser:
     s.add_argument("--temperature", type=float)
     s.add_argument("--top-p", type=float)
     s.add_argument("--max-tokens", type=int)
+    s.add_argument("--request-timeout", type=float, metavar="SECONDS",
+                   help="how long to wait for each reply (default: request_timeout_seconds in runner.yaml, 300); "
+                        "a reply that takes longer is recorded as a timeout (T) and not retried")
     s.add_argument("--output", "-o", default="results.json", help="results.json or results.jsonl")
     s.add_argument("--report-dir", help="also write report.json/md/html here")
     s.add_argument("--resume", action="store_true", help="resume from <output>.partial")

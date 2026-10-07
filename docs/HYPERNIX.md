@@ -84,6 +84,21 @@ different model — and then refuses any reply whose `backend_name` differs.
 A server too old to report `backend_name` cannot satisfy a requirement, so
 those replies are refused rather than assumed.
 
+### Slow models and timeouts
+
+T1 waits `T1_LMSTUDIO_TIMEOUT` (300 s) for its backend and rsostb waits
+`--request-timeout` (300 s) for T1. A small model on a CPU can take longer
+than that on some prompts — for example, looping at temperature 0 until it
+hits `--max-tokens`. Such a task is recorded as a timeout (`T`, credit 0)
+and is not resent. The backend usually keeps writing the abandoned reply, so
+rsostb then sends short requests until one is answered before starting the
+next task; otherwise every task after it would queue behind the abandoned
+reply and time out as well. If nothing is answered within
+`wait_after_timeout_seconds` (runner.yaml, 900 s) the run stops — use
+`--checkpoint` to be able to `--resume` it. To give a slow model more time,
+raise both limits (`--request-timeout 900` and `T1_LMSTUDIO_TIMEOUT=900` on the
+server), or lower `--max-tokens`.
+
 ## 2. In-process ovens — `hypernix`
 
 Loads a HyperNix oven (`hypernix.neo_oven` by default, or `old_oven`) in the

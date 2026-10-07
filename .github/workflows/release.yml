@@ -47,6 +47,7 @@ jobs:
       package: ${{ steps.plan.outputs.package }}
       tag: ${{ steps.plan.outputs.tag }}
       ref: ${{ steps.plan.outputs.ref }}
+      sha: ${{ steps.plan.outputs.sha }}
     steps:
       - uses: actions/checkout@v4
         with:
@@ -116,6 +117,8 @@ jobs:
             echo "package=$package"
             echo "tag=$selected_tag"
             echo "ref=$ref"
+            # The commit itself: GitHub refuses a tag name as a release's target_commitish.
+            echo "sha=$(git rev-parse "${ref}^{commit}")"
           } >> "$GITHUB_OUTPUT"
           echo "### Release plan: **$mode** $package $version using tag \`$selected_tag\` (source: $source_version; latest tag: ${highest_tag:-none})" >> "$GITHUB_STEP_SUMMARY"
 
@@ -294,8 +297,10 @@ jobs:
       - uses: softprops/action-gh-release@v2
         with:
           # Named explicitly: a manual publish runs from a branch, and this
-          # creates the tag on the commit that was built.
+          # creates the tag on the commit that was built. target_commitish is
+          # that commit's SHA: updating a release created by hand first fails
+          # with "target_commitish invalid" when given a tag name (1.0.2).
           tag_name: ${{ needs.plan.outputs.tag }}
-          target_commitish: ${{ needs.plan.outputs.ref == needs.plan.outputs.tag && needs.plan.outputs.tag || github.sha }}
+          target_commitish: ${{ needs.plan.outputs.sha }}
           files: dist/*
           generate_release_notes: true

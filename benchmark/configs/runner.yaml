@@ -5,10 +5,11 @@ seed: 1337
 shuffle_tasks: true
 shuffle_choices: true
 max_workers: 1
-request_timeout_seconds: 180
-max_retries: 2
+request_timeout_seconds: 300        # per reply (--request-timeout); a slower reply is a timeout, never retried
+max_retries: 2                      # for failed requests other than timeouts
 retry_backoff_seconds: 2.0
 abort_after_consecutive_errors: 10   # stop a run whose model stopped answering (0: never)
+wait_after_timeout_seconds: 900      # after a timeout, wait this long at most for the server to answer again
 
 generation:
   temperature: 0.0

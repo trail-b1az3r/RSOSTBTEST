@@ -1,6 +1,38 @@
 # Changelog
 
-## Unreleased
+## 1.0.3 — 2026-10-07
+
+### Fixed — "the benchmark hangs around task 140–200, then shows E rows"
+* **A reply that ran out of time was sent again, and the tasks after it
+  failed too.** Local servers (llama.cpp, LM Studio, a T1 runner) answer one
+  request at a time and keep writing a reply after the client gave up. A
+  timed-out request was resent up to twice by the runner (and on the
+  standard-library client up to twice more per try), each copy queued behind
+  the reply still being written, and the next tasks queued behind all of
+  them and timed out as well: a long stall, then a run of `E` rows with
+  credit 0. Reproduced against a real T1 server and `waiter serv` with a
+  one-request-at-a-time model: 23 of 180 tasks failed, 12 of them only for
+  waiting behind an abandoned reply. Now a timeout is never resent, is
+  recorded as `timeout` (`T`) rather than `error`, and the run waits until
+  the server answers a short request before the next task (at most
+  `wait_after_timeout_seconds`, 900 s, then it stops with the reason): only
+  the slow tasks fail, and the same run took 193 s instead of 542 s.
+  T1's own "did not answer within" (503) and gateway timeouts (504) count as
+  timeouts too, and `validate --rescore` skips timed-out tasks (no reply to
+  re-grade) as it does errored ones.
+* **`request_timeout_seconds` in runner.yaml was never used**: each adapter
+  waited its own default (300 s for `hypernix-t1`, 180 s for the others). It
+  now applies to every adapter, defaults to 300 s, and `--request-timeout`
+  overrides it (an `--adapter-option timeout=…` still wins).
+* **`E` said nothing about why**: every `E` or `T` row now prints the error
+  underneath, and a run stopped after 10 timeouts in a row says to raise
+  `--request-timeout` or lower `--max-tokens`.
+* `release.yml`: attaching the files to a GitHub Release created by hand
+  failed with "target_commitish invalid" (1.0.2 reached PyPI, but its
+  release page has no files). The release now targets the commit's SHA
+  instead of the tag name.
+
+## 1.0.2 — 2026-10-07
 
 ### Fixed
 * **`hypernix-t1` ignored `waiter serv`**: after
