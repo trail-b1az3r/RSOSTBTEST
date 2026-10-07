@@ -1,5 +1,18 @@
 # Changelog
 
+## Unreleased
+
+### Changed
+* **Manual releases decide the tag by the version input.** `auto` never
+  creates a tag: it publishes into the GitHub release `v<RUNNER_VERSION>`
+  made beforehand, which must have its tag and no files, and stops with how
+  to make one otherwise (it used to pick the highest tag or version and
+  create a missing tag). An explicit `vX.Y.Z` creates its tag, on the commit
+  that was verified and built, just before the upload; an existing tag is
+  used. Every run now checks, before the tests, that the tag's commit
+  declares that `RUNNER_VERSION` (1.0.3's tag sat on a 1.0.2 commit) and that
+  the version is not on PyPI yet. See docs/DEVELOPMENT.md → Releasing.
+
 ## 1.0.4 — 2026-10-07
 
 ### Fixed — "the benchmark hangs around task 140–200, then shows E rows"

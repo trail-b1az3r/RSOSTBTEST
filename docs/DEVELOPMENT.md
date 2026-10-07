@@ -57,7 +57,7 @@ src/rsostb/
 | `benchmark-validation.yml` | changes to benchmark/src/examples | task lint, version check, full oracle self-check **with code execution**, score-range and task-count assertions, example results re-verified with execution, slow tests |
 | `dataset-validation.yml` | changes to benchmark/dataset | `dataset build --check`, private-leak scan, answer-free prompt records, publish dry run |
 | `build.yml` | push, PR, called by release | sdist + wheel, `twine check`, install the wheel in a clean venv outside the checkout and run a benchmark from the bundled data |
-| `release.yml` | tag `vX.Y.Z`, manual | tag = package version, full verification, build, publish to PyPI (trusted publishing), install it back from PyPI, GitHub Release; manual `validate` mode does all of it except the upload |
+| `release.yml` | tag `vX.Y.Z`, manual | tag = package version, full verification, build, publish to PyPI (trusted publishing), install it back from PyPI, GitHub Release; manual `auto` uses an existing empty release with its tag, a manual `vX.Y.Z` creates the tag; `validate` mode does all of it except the upload |
 | `update-hf.yml` | push to main, daily, manual | validate, then publish the dataset and Space (HF token from a repository secret; dry run without one); the daily run rebuilds only the Space, to list newly merged submissions |
 
 Repository settings used:
@@ -86,11 +86,26 @@ environment `pypi` (or `PYPI_ENVIRONMENT`), project `RSOSTB`.
    publisher is still *pending* (the project is not on PyPI yet), PyPI
    creates the empty project on this first use — the same moment it would on
    the first release. Manual runs need the workflow on the default branch.
-4. Commit, then `git tag v1.0.1 && git push --tags`. The `release` workflow
-   verifies, builds, publishes to PyPI, installs the release back from PyPI
-   in a clean virtualenv and smoke-tests it, then creates the GitHub Release.
-   A tag that does not match `RUNNER_VERSION`, or a version already on PyPI,
-   stops the run before anything is uploaded.
+4. Merge to `main`, then publish in one of three ways. Each verifies, builds,
+   publishes to PyPI, installs the release back from PyPI in a clean
+   virtualenv and smoke-tests it, then attaches the files to the GitHub
+   Release.
+   * **Run workflow → `pypi`, version `v1.0.5`** (an explicit new version):
+     the run creates the tag `v1.0.5` itself, on the commit it verified and
+     built, just before the upload, and then the release. An existing
+     `v1.0.5` tag is used instead.
+   * **Run workflow → `pypi`, version `auto`**: creates no tag. It publishes
+     into the GitHub release `v<RUNNER_VERSION>` you made beforehand
+     (Releases → Draft a new release → new tag on `main` → Publish), which
+     must have its tag and no files yet; without one the run stops and says
+     how to make it.
+   * Push a tag: `git tag v1.0.5 && git push origin v1.0.5`. Publishing a
+     release with a new tag on GitHub pushes one too, and starts this run.
+
+   The run stops before anything is uploaded if the version is already on
+   PyPI, if you ask for a version other than `RUNNER_VERSION`, or if the tag
+   sits on a commit whose `RUNNER_VERSION` differs (make the release or tag
+   *after* the version bump is on `main`).
 
 ## Changing scoring
 
