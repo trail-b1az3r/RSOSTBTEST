@@ -1,6 +1,6 @@
 # Changelog
 
-## 1.0.3 — 2026-10-07
+## 1.0.4 — 2026-10-07
 
 ### Fixed — "the benchmark hangs around task 140–200, then shows E rows"
 * **A reply that ran out of time was sent again, and the tasks after it
@@ -28,9 +28,16 @@
   underneath, and a run stopped after 10 timeouts in a row says to raise
   `--request-timeout` or lower `--max-tokens`.
 * `release.yml`: attaching the files to a GitHub Release created by hand
-  failed with "target_commitish invalid" (1.0.2 reached PyPI, but its
-  release page has no files). The release now targets the commit's SHA
-  instead of the tag name.
+  failed with "target_commitish invalid" (1.0.2 and 1.0.3 reached PyPI, but
+  their release pages have no files). The release now targets the commit's
+  SHA instead of the tag name. The package is also built from the commit the
+  `verify` job tested: `build` used to package the commit the run was started
+  from, which for 1.0.3 was not the tagged one.
+
+## 1.0.3 — 2026-10-07
+
+Version number only: the same code as 1.0.2. It does **not** contain the
+timeout fixes above, which were not on `main` when it was published.
 
 ## 1.0.2 — 2026-10-07
 

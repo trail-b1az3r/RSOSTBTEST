@@ -147,6 +147,11 @@ jobs:
   build:
     needs: [plan, verify]
     uses: ./.github/workflows/build.yml
+    with:
+      # The commit verify tested, not the one the run was started from: for
+      # 1.0.3 the tag was on 1444d02 and the run on 53144b0, so the tested
+      # and the published code differed.
+      ref: ${{ needs.plan.outputs.sha }}
 
   pypi:
     needs: [plan, build]
