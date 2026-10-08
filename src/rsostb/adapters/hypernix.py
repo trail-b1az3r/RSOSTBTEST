@@ -495,6 +495,7 @@ class HyperNixOvenAdapter(ModelAdapter):
     """
 
     name = "hypernix"
+    loads_model = True
 
     def __init__(self, model: str | None = None, *, repo_id: str | None = None, local_dir: str | None = None,
                  revision: str | None = None, device: str | None = None, dtype: str = "float32",
@@ -504,6 +505,9 @@ class HyperNixOvenAdapter(ModelAdapter):
         self.local_dir, self.revision, self.device, self.dtype = local_dir, revision, device, dtype
         self.oven_kind, self.brewed, self.top_k = oven, brewed, top_k
         self._oven = None
+
+    def prepare(self) -> None:
+        self._load()
 
     def _load(self):
         if self._oven is not None:

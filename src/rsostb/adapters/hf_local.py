@@ -9,6 +9,7 @@ from .base import AdapterError, Generation, ModelAdapter, sampling
 
 class HFLocalAdapter(ModelAdapter):
     name = "hf-local"
+    loads_model = True
 
     def __init__(self, model: str | None = None, *, revision: str | None = None, device_map: str = "auto",
                  dtype: str = "auto", trust_remote_code: bool = False, **options: Any) -> None:
@@ -16,6 +17,9 @@ class HFLocalAdapter(ModelAdapter):
         self.revision, self.device_map, self.dtype = revision, device_map, dtype
         self.trust_remote_code = trust_remote_code
         self._tok = self._model = None
+
+    def prepare(self) -> None:
+        self._load()
 
     def _load(self):
         if self._model is not None:

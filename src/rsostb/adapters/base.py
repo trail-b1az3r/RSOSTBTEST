@@ -83,6 +83,13 @@ class ModelAdapter(ABC):
         """Model metadata for the results file. Never include secrets."""
         return {"name": self.model, "adapter": self.name, "kind": self.kind}
 
+    #: Loads the model in-process on first use (a download can take minutes).
+    loads_model = False
+
+    def prepare(self) -> None:  # noqa: B027 - optional hook
+        """Load what the first request would otherwise load, so loading (and
+        downloading) is not counted against the test request's time limit."""
+
     def recover(self) -> str | None:
         """Try to get a server that stopped answering going again (for
         example, restart the model process). Returns what was done, or None
