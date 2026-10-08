@@ -1,5 +1,20 @@
 # Changelog
 
+## Unreleased
+
+### Added
+* **`hf-local` runs GGUF models on llama.cpp.** A repo with only `.gguf`
+  files (such as `LiquidAI/LFM2.5-1.2B-Thinking-GGUF`) has no tokenizer
+  `transformers` can load, so the test request failed with "Couldn't
+  instantiate the backend tokenizer". `hf-local` now recognises
+  `org/repo:file.gguf`, a GGUF-only repo and a local `.gguf` path and runs
+  them with `llama-cpp-python` (`pip install 'RSOSTB[gguf]'`), using the
+  model's own chat template. Without a file named it takes Q4_K_M (then
+  Q5_K_M, Q8_0, …); the results record the file and its quantization.
+  Options `gguf_file`, `n_ctx`, `gpu_layers`. Without llama.cpp installed,
+  the error says how to install it or which other route runs the model
+  (`benchmake -M`, a T1 server).
+
 ## 1.0.7 — 2026-10-08
 
 ### Fixed — "did not answer a short test request within 120s" while downloading

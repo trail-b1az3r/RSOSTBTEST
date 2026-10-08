@@ -91,6 +91,21 @@ A non-zero exit status is recorded as an adapter error for that task.
 `device_map` (default `auto`), `dtype`, `trust_remote_code` (default
 **false**).
 
+GGUF models run on llama.cpp instead (`pip install "RSOSTB[gguf]"`, i.e.
+`llama-cpp-python`; build it for your GPU as its docs describe):
+
+```bash
+rsostb benchmark --adapter hf-local --model LiquidAI/LFM2.5-1.2B-Thinking-GGUF            # Q4_K_M
+rsostb benchmark --adapter hf-local --model LiquidAI/LFM2.5-1.2B-Thinking-GGUF:LFM2.5-1.2B-Thinking-Q8_0.gguf
+rsostb benchmark --adapter hf-local --model ~/models/my-model-Q4_K_M.gguf
+```
+
+A repo with only `.gguf` files (no `config.json` or weights `transformers`
+reads) is GGUF; without a file named, the first of Q4_K_M, Q5_K_M, Q8_0,
+Q6_K, Q4_0, … is used, and the results record the file and its
+quantization. Options: `gguf_file`, `n_ctx` (default 8192), `gpu_layers`
+(default -1: all on the GPU when llama.cpp was built with one).
+
 ## HyperNix
 
 `hypernix-t1` (T1 API governed inference, answered by the server's own

@@ -47,6 +47,8 @@ godot = ["gdtoolkit>=4.2"]
 hf = ["huggingface_hub>=0.24"]
 # Local Hugging Face transformers models (heavy, only for the hf-local adapter).
 transformers = ["transformers>=4.40", "torch>=2.1"]
+# GGUF models for the hf-local adapter, through llama.cpp.
+gguf = ["llama-cpp-python>=0.3", "huggingface_hub>=0.24"]
 # HyperNix in-process ovens (the T1 HTTP adapter needs nothing extra).
 hypernix = ["hypernix>=0.72"]
 # The Hugging Face Space UI.

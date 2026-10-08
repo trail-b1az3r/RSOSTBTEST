@@ -227,3 +227,86 @@ def test_baseline_kinds():
 def test_oracle_answers_every_non_episode_task(bench):
     missing = [t.id for t in bench.tasks if not t.is_episode and not str(reference_response(t)).strip()]
     assert not missing, missing[:10]
+
+
+# --- hf-local: GGUF models run on llama.cpp ---------------------------------------------------
+
+LFM_FILES = [".gitattributes", "LICENSE", "README.md", "LFM2.5-1.2B-Thinking-BF16.gguf",
+             "LFM2.5-1.2B-Thinking-F16.gguf", "LFM2.5-1.2B-Thinking-Q4_0.gguf", "LFM2.5-1.2B-Thinking-Q4_K_M.gguf",
+             "LFM2.5-1.2B-Thinking-Q5_K_M.gguf", "LFM2.5-1.2B-Thinking-Q6_K.gguf", "LFM2.5-1.2B-Thinking-Q8_0.gguf"]
+
+
+@pytest.fixture()
+def fake_llama(monkeypatch):
+    import types
+
+    loads = []
+
+    class Llama:
+        def __init__(self, model_path=None, **kw):
+            loads.append({"model_path": model_path, **kw})
+
+        @classmethod
+        def from_pretrained(cls, repo_id, filename, **kw):
+            loads.append({"repo_id": repo_id, "filename": filename, **kw})
+            return cls.__new__(cls)
+
+        def create_chat_completion(self, messages, **kw):
+            loads.append({"chat": messages, **kw})
+            return {"choices": [{"message": {"content": "<think>hm</think>ANSWER: 4"}, "finish_reason": "stop"}],
+                    "usage": {"prompt_tokens": 9, "completion_tokens": 5}}
+
+    monkeypatch.setitem(sys.modules, "llama_cpp", types.SimpleNamespace(Llama=Llama))
+    hub_files(monkeypatch, LFM_FILES)
+    return loads
+
+
+def hub_files(monkeypatch, files):
+    """A stand-in huggingface_hub (an optional extra) that lists *files* for any repo."""
+    import types
+
+    monkeypatch.setitem(sys.modules, "huggingface_hub",
+                        types.SimpleNamespace(list_repo_files=lambda repo, revision=None: files))
+
+
+def test_a_gguf_repo_runs_on_llama_cpp(fake_llama):
+    a = create_adapter("hf-local", "LiquidAI/LFM2.5-1.2B-Thinking-GGUF")
+    g = a.chat(MSGS, temperature=0.0, max_tokens=32)
+    assert g.text.endswith("ANSWER: 4") and g.usage == {"input_tokens": 9, "output_tokens": 5}
+    assert fake_llama[0]["repo_id"] == "LiquidAI/LFM2.5-1.2B-Thinking-GGUF"
+    assert fake_llama[0]["filename"] == "LFM2.5-1.2B-Thinking-Q4_K_M.gguf"      # the default quantization
+    assert fake_llama[1]["max_tokens"] == 32 and fake_llama[1]["temperature"] == 0.0
+    d = a.describe()
+    assert d["name"] == "LiquidAI/LFM2.5-1.2B-Thinking-GGUF:LFM2.5-1.2B-Thinking-Q4_K_M.gguf"
+    assert d["quantization"] == "Q4_K_M" and "llama.cpp" in d["provider"]
+
+
+def test_a_named_gguf_file_is_used(fake_llama):
+    create_adapter("hf-local", "LiquidAI/LFM2.5-1.2B-Thinking-GGUF:LFM2.5-1.2B-Thinking-Q8_0.gguf").chat(MSGS)
+    assert fake_llama[0]["filename"] == "LFM2.5-1.2B-Thinking-Q8_0.gguf"
+    fake_llama.clear()
+    a = create_adapter("hf-local", "LiquidAI/LFM2.5-1.2B-Thinking-GGUF", gguf_file="LFM2.5-1.2B-Thinking-Q6_K.gguf")
+    a.chat(MSGS)
+    assert fake_llama[0]["filename"] == "LFM2.5-1.2B-Thinking-Q6_K.gguf" and a.describe()["quantization"] == "Q6_K"
+
+
+def test_a_gguf_repo_without_llama_cpp_says_what_to_do(monkeypatch, tmp_path, capsys):
+    from rsostb.cli.main import main
+
+    monkeypatch.setitem(sys.modules, "llama_cpp", None)          # import fails
+    hub_files(monkeypatch, LFM_FILES)
+    with pytest.raises(AdapterError, match=r"RSOSTB\[gguf\].*benchmake -M"):
+        create_adapter("hf-local", "LiquidAI/LFM2.5-1.2B-Thinking-GGUF").chat(MSGS)
+    assert main(["benchmark", "--adapter", "hf-local", "--model", "LiquidAI/LFM2.5-1.2B-Thinking-GGUF",
+                 "--categories", "math", "--limit-per-category", "1", "--output", str(tmp_path / "r.jsonl")]) == 3
+    err = capsys.readouterr().err
+    assert "is a GGUF model, which runs on llama.cpp" in err and "--base-url" not in err
+
+
+def test_a_transformers_repo_is_not_treated_as_gguf(monkeypatch):
+    from rsostb.adapters.hf_local import gguf_source, pick_gguf
+
+    hub_files(monkeypatch, ["config.json", "model.safetensors", "tokenizer.json"])
+    assert gguf_source("LiquidAI/LFM2.5-1.2B-Thinking") is None
+    assert pick_gguf(LFM_FILES) == "LFM2.5-1.2B-Thinking-Q4_K_M.gguf"
+    assert pick_gguf(["a-IQ3_XS.gguf", "mmproj-f16.gguf"]) == "a-IQ3_XS.gguf"
