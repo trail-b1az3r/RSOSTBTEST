@@ -83,6 +83,12 @@ class ModelAdapter(ABC):
         """Model metadata for the results file. Never include secrets."""
         return {"name": self.model, "adapter": self.name, "kind": self.kind}
 
+    def recover(self) -> str | None:
+        """Try to get a server that stopped answering going again (for
+        example, restart the model process). Returns what was done, or None
+        when there is nothing this adapter can do."""
+        return None
+
     def health(self) -> str | None:
         """One line on whether the server answers at all, for when a reply is
         slow: "busy" and "gone" need different fixes. None when there is
