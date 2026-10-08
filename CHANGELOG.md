@@ -1,5 +1,27 @@
 # Changelog
 
+## 1.0.6 — 2026-10-08
+
+### Fixed — "the model did not answer a short test request" with the runner up
+* **`hypernix-t1` streams replies**, from `POST /inference/chat/stream`
+  (falling back to `/inference/chat` on servers without it), so a reply
+  that runs past `--request-timeout` is closed rather than abandoned. With
+  the non-streaming endpoint T1 kept the HyperNix runner writing the whole
+  abandoned reply in its one slot, and every request after it waited — the
+  runner answered `/v1/models` but no chat. Together with the matching
+  HyperNix T1 fix (T1 did not notice a caller leaving a stream, so it kept
+  reading the backend too), a 60 s runaway reply now stops 0.1 s after the
+  timeout; a test run with three runaways took 20 s instead of 47 s.
+* **A runner that stops answering is restarted.** When the test request
+  before a run, or the wait after a timeout, gets no answer while the T1
+  runner serves the benchmarked model, `hypernix-t1` restarts it through T1
+  (`GET /runner/status`, `POST /runner/unload`, `POST /runner/load` with the
+  same model, GPU layers and context) and the run carries on.
+  `--adapter-option restart_runner=false` turns it off; `stream=false` goes
+  back to the plain endpoint.
+* After a timeout the run now says it is checking that the model server is
+  free, not that it is waiting for the server to finish writing the reply.
+
 ## 1.0.5 — 2026-10-07
 
 ### Fixed — "it prints the header, then nothing"

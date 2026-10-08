@@ -139,6 +139,17 @@ def speed_hint(tokens: int, seconds: float, max_tokens: Any, timeout: Any) -> st
 class RunAborted(AdapterError):
     """The run stopped because the model could not be reached; nothing was scored."""
 
+    #: The model gave no answer in time (as opposed to refusing, or a bad key).
+    timed_out = False
+
+
+def try_recover(adapter: ModelAdapter) -> str | None:
+    """Ask the adapter to get a stuck server going again (T1: restart its runner)."""
+    try:
+        return adapter.recover()
+    except Exception as exc:  # noqa: BLE001 - recovery is best effort
+        return f"could not restart the model server ({type(exc).__name__}: {exc})"
+
 
 def sandbox_selftest(sb, limits: SandboxLimits) -> str | None:
     """Run one trivial Python program in the sandbox. Returns what went wrong,
@@ -176,15 +187,19 @@ def preflight(adapter: ModelAdapter, retries: int = 1, backoff: float = 2.0, bud
         worker.join(budget)
     if worker.is_alive():
         health = server_health(adapter)
-        raise RunAborted(
+        aborted = RunAborted(
             f"the model did not answer a short test request within {budget:g}s, so nothing was run"
             + (f" ({health})" if health else "")
             + ". If a run was stopped recently, the model server may still be writing replies for it (local "
             "servers finish them after the client has gone): wait for that, or restart the model server. A model "
             "that loads on its first request may need longer: preflight_timeout_seconds in runner.yaml.")
+        aborted.timed_out = True
+        raise aborted
     if "error" in outcome:
         exc = outcome["error"]
-        raise RunAborted(f"the model did not answer a test request, so nothing was run: {exc}") from exc
+        aborted = RunAborted(f"the model did not answer a test request, so nothing was run: {exc}")
+        aborted.timed_out = isinstance(exc, RequestTimeout)
+        raise aborted from exc
 
 
 def wait_until_free(adapter: ModelAdapter, budget: float) -> str | None:
@@ -399,9 +414,16 @@ def run_benchmark(
     if check_model and pending and getattr(adapter, "kind", "model") == "model":
         if progress:
             say("checking that the model answers (one short test request)...")
-        preflight(adapter, retries=0,  # adapters retry their own transport errors
-                  budget=float(cfg.get("preflight_timeout_seconds", DEFAULT_PREFLIGHT_TIMEOUT)),
-                  show=progress is not None)
+        budget = float(cfg.get("preflight_timeout_seconds", DEFAULT_PREFLIGHT_TIMEOUT))
+        try:
+            preflight(adapter, retries=0, budget=budget, show=progress is not None)  # adapters retry transport errors
+        except RunAborted as exc:
+            fixed = try_recover(adapter) if exc.timed_out else None
+            if not fixed:
+                raise
+            if progress:
+                say(f"    {fixed}; trying the test request again")
+            preflight(adapter, retries=0, budget=budget, show=progress is not None)
     if any(t.data.get("requires_code_execution") or t.is_episode for t in pending):
         problem = sandbox_selftest(sb, limits)
         if problem:
@@ -455,10 +477,17 @@ def run_benchmark(
                     if hint:  # once per run, as soon as there are enough replies to go on
                         explained.set()
                         say(f"    {hint}.")
-                say(f"    waiting for the model server to finish the reply it is still writing for {task.id} "
-                    "before the next task (it would otherwise wait behind it and time out too)")
-            with Waiting(adapter, "the model server to finish that reply", enabled=progress is not None):
+                say("    checking that the model server is free before the next task (one that keeps writing a "
+                    "reply nobody waits for would make the next task queue behind it and time out too)")
+            with Waiting(adapter, "the model server to be free", enabled=progress is not None):
                 problem = wait_until_free(adapter, wait_budget)
+            if problem:
+                fixed = try_recover(adapter)
+                if fixed:
+                    if progress:
+                        say(f"    {fixed}")
+                    with Waiting(adapter, "the restarted model server", enabled=progress is not None):
+                        problem = wait_until_free(adapter, min(wait_budget, DEFAULT_PREFLIGHT_TIMEOUT * 2.5))
             if problem:
                 health = server_health(adapter)
                 stuck = (f"the model server has not answered anything for {wait_budget:g}s since {task.id} timed "

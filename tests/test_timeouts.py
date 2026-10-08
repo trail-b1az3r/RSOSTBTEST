@@ -124,7 +124,7 @@ def test_a_timed_out_task_costs_only_itself(capsys):
     assert all(s != "timeout" for tid, s in status.items() if tid != slow)  # the next task did not queue behind it
     assert a.probes == 3                                                  # waited until the server answered
     err = capsys.readouterr().err
-    assert "no reply from http://model within 1s" in err and "waiting for the model server" in err
+    assert "no reply from http://model within 1s" in err and "checking that the model server is free" in err
     rep = validate_results(doc, rescore=True)  # a timed-out task has no reply to re-grade
     assert rep.ok, rep.errors
 
@@ -286,3 +286,87 @@ def test_the_speed_is_explained_at_the_first_timeout_with_enough_to_go_on(capsys
     err = capsys.readouterr().err
     assert err.count("tokens/s, so one that runs to max_tokens (2048)") == 1
     assert err.index("tokens/s") > err.index(ran[6])
+
+
+# --- hypernix-t1: streamed replies and restarting a stuck runner -------------------------------
+
+MSGS = [{"role": "user", "content": "ping"}]
+
+def t1(url, **kw):
+    from rsostb.adapters.hypernix import HyperNixT1Adapter
+
+    return HyperNixT1Adapter("lfm2-5-350m-q8-0", base_url=url, use_sdk=False, **kw)
+
+
+def test_t1_streams_the_reply(mock_server):
+    url, handler = mock_server
+    handler.replies.update({"stream": True, "text": "the answer is 42"})
+    a = t1(url)
+    g = a.chat(MSGS, max_tokens=64)
+    assert g.text == "the answer is 42" and g.finish_reason == "stop"
+    assert g.usage["backend_name"] == "hypernix" and g.usage["output_tokens"] == 6   # pieces stand in for usage
+    req = handler.seen[-1]
+    assert req["path"].endswith("/inference/chat/stream") and req["body"]["allow_fallback"] is False
+
+
+def test_t1_stream_refusals_and_errors(mock_server):
+    url, handler = mock_server
+    handler.replies.update({"stream": True, "substituted": True, "served_model": "other"})
+    with pytest.raises(AdapterError, match="substituted"):
+        t1(url).chat(MSGS)
+    handler.replies.update({"substituted": False, "stream_error": {"code": "timeout",
+                            "message": "the runner did not answer within 300s"}})
+    with pytest.raises(RequestTimeout, match="failed mid-reply"):
+        t1(url).chat(MSGS)
+    handler.replies["stream_error"] = {"code": "http_error", "message": "model crashed"}
+    with pytest.raises(AdapterError, match="model crashed") as err:
+        t1(url).chat(MSGS)
+    assert not isinstance(err.value, RequestTimeout)
+
+
+def test_t1_stops_reading_a_reply_past_the_timeout(mock_server):
+    url, handler = mock_server
+    handler.replies.update({"stream": True, "text": "x" * 300, "stream_delay": 0.05})
+    t0 = runner_mod.time.monotonic()
+    with pytest.raises(RequestTimeout, match="stopped it after"):
+        t1(url, timeout=0.5).chat(MSGS)
+    assert runner_mod.time.monotonic() - t0 < 2
+    threading.Event().wait(0.3)
+    assert any(r.get("client_gone") for r in handler.seen)       # the connection was really closed
+
+
+def test_t1_falls_back_to_the_plain_endpoint_on_an_older_server(mock_server):
+    url, handler = mock_server          # this mock has no stream endpoint unless asked
+    a = t1(url)
+    assert a.chat(MSGS).text and a.stream is False
+    assert handler.seen[-1]["path"].endswith("/inference/chat")
+
+
+def test_t1_restarts_its_runner_when_it_serves_this_model(mock_server):
+    url, handler = mock_server
+    handler.replies["runner"] = {"loaded": True, "base_url": "http://127.0.0.1:8781", "model": {
+        "model_id": "lfm2-5-350m-q8-0", "context_length": 8192,
+        "placement": {"gpu_layers": 20, "backend": "cuda", "explicit": True}}}
+    did = t1(url).recover()
+    assert did.startswith("restarted T1's HyperNix runner for lfm2-5-350m-q8-0")
+    unload, load = [r for r in handler.seen if r["path"].startswith("/runner/")][-2:]
+    assert unload["path"] == "/runner/unload" and load["path"] == "/runner/load"
+    assert load["body"] == {"model_id": "lfm2-5-350m-q8-0", "gpu_layers": 20, "backend": "cuda", "context_length": 8192}
+    handler.replies["runner"]["model"]["model_id"] = "someone-elses-model"
+    assert t1(url).recover() is None                             # not ours to restart
+    assert t1(url, restart_runner="false").recover() is None
+
+
+def test_a_stuck_server_is_restarted_and_the_run_goes_on(monkeypatch, capsys):
+    real = runner_mod.load_runner_config
+    monkeypatch.setattr(runner_mod, "load_runner_config", lambda: {**real(), "preflight_timeout_seconds": 0.2})
+
+    class Stuck(Writer):
+        def recover(self):
+            self.probe_delay = 0.0
+            return "restarted the model server"
+
+    a = Stuck(probe_delay=5)
+    doc = run_benchmark(a, categories=["math"], limit_per_category=2, progress=print_progress)
+    assert len(doc["task_results"]) == 2
+    assert "restarted the model server; trying the test request again" in capsys.readouterr().err

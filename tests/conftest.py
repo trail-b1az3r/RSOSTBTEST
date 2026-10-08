@@ -97,6 +97,8 @@ class _MockHandler(BaseHTTPRequestHandler):
 
     def do_GET(self):  # noqa: N802
         type(self).seen.append({"path": self.path, "method": "GET", "auth": self.headers.get("Authorization")})
+        if self.path.rstrip("/").endswith("/runner/status") and "runner" in type(self).replies:
+            return self._send(200, {**type(self).replies["runner"], "request_id": "mock"})
         if self.path.rstrip("/").endswith("/status"):
             return self._send(200, {"ok": True, "version": "mock"})
         if self.path.rstrip("/").endswith("/inference/backends") and "backends" in type(self).replies:
@@ -104,6 +106,32 @@ class _MockHandler(BaseHTTPRequestHandler):
             default = next((r["name"] for r in rows if r.get("reachable")), "")
             return self._send(200, {"backends": rows, "default": default, "request_id": "mock"})
         self._send(404, {"error": "not found"})
+
+    def _stream(self, req: dict, reply: str) -> None:
+        """T1's /inference/chat/stream: a header comment, OpenAI chunks, [DONE]."""
+        r = type(self).replies
+        self.send_response(200)
+        self.send_header("Content-Type", "text/event-stream")
+        self.end_headers()
+        header = {"model": r.get("served_model", req.get("model")), "requested_model": req.get("model"),
+                  "substituted": r.get("substituted", False), "backend": "http://127.0.0.1:8781",
+                  "backend_name": r.get("backend_name", "hypernix")}
+        out = [f": hypernix inference open {json.dumps(header)}\n\n"]
+        for i in range(0, len(reply), 3):
+            out.append("data: " + json.dumps({"choices": [{"index": 0, "delta": {"content": reply[i:i + 3]}}]}) + "\n\n")
+        if r.get("stream_error"):
+            out.append("data: " + json.dumps({"error": r["stream_error"]}) + "\n\n")
+        else:
+            out.append("data: " + json.dumps({"choices": [{"index": 0, "delta": {}, "finish_reason": "stop"}]}) + "\n\n")
+        out.append("data: [DONE]\n\n")
+        try:
+            for piece in out:
+                if r.get("stream_delay"):
+                    threading.Event().wait(r["stream_delay"])
+                self.wfile.write(piece.encode())
+                self.wfile.flush()
+        except (BrokenPipeError, ConnectionResetError):
+            type(self).seen.append({"path": self.path, "client_gone": True})
 
     def do_POST(self):  # noqa: N802
         n = int(self.headers.get("Content-Length") or 0)
@@ -115,6 +143,11 @@ class _MockHandler(BaseHTTPRequestHandler):
             return self._send(200, {"model": req.get("model"), "choices": [
                 {"message": {"role": "assistant", "content": reply}, "finish_reason": "stop"}],
                 "usage": {"prompt_tokens": 3, "completion_tokens": 2}})
+        if self.path.endswith("/inference/chat/stream") and type(self).replies.get("stream"):
+            return self._stream(req, reply)
+        if self.path.endswith(("/runner/unload", "/runner/load")) and "runner" in type(self).replies:
+            return self._send(200, {"loaded": self.path.endswith("load") and not self.path.endswith("unload"),
+                                    "request_id": "mock"})
         if self.path.endswith("/inference/chat"):
             need = type(self).replies.get("require_key")
             if need and self.headers.get("Authorization") != f"Bearer {need}":

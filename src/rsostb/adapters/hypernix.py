@@ -26,6 +26,8 @@ from __future__ import annotations
 import json
 import os
 import time
+import urllib.error
+import urllib.request
 import warnings
 from dataclasses import dataclass
 from pathlib import Path
@@ -149,12 +151,21 @@ def hypernix_version() -> str | None:
         return None
 
 
+class _NoStream(Exception):
+    """The server has no /inference/chat/stream."""
+
+
+def _truthy(value: Any) -> bool:
+    return str(value).strip().lower() not in ("0", "false", "no", "off", "")
+
+
 class HyperNixT1Adapter(ModelAdapter):
     name = "hypernix-t1"
 
     def __init__(self, model: str | None = None, *, base_url: str | None = None, api_key_env: str | None = None,
                  timeout: float = 300.0, retries: int = 2, use_sdk: bool | None = None,
-                 backend: str | None = None, **options: Any) -> None:
+                 backend: str | None = None, stream: Any = True, restart_runner: Any = True,
+                 **options: Any) -> None:
         super().__init__(model, **options)
         backend = (backend or "").strip().lower() or None
         if backend in ("any", "auto"):
@@ -186,9 +197,29 @@ class HyperNixT1Adapter(ModelAdapter):
             except Exception:
                 self._client = None
         self._status: dict[str, Any] | None = None
+        #: Use POST /inference/chat/stream, so a reply rsostb gives up on is
+        #: also stopped on the server (the plain endpoint keeps the runner
+        #: writing it, and every request after it waits). Falls back to
+        #: /inference/chat on a server without the stream endpoint.
+        self.stream = _truthy(stream)
+        #: Restart T1's HyperNix runner when it stops answering for this model.
+        self.restart_runner = _truthy(restart_runner)
 
     def _key(self) -> str | None:
         return env_secret(self.api_key_env) or self._waiter_key
+
+    def _auth_headers(self) -> dict[str, str]:
+        """The Authorization header as the SDK sends it (a v2.1 kit sends the
+        day's key it makes, not itself)."""
+        transport = getattr(self._client, "transport", None)
+        try:
+            key = transport.wire_credential() if transport is not None else self._key()
+        except Exception:  # noqa: BLE001 - fall back to the key as configured
+            key = self._key()
+        return {"Authorization": f"Bearer {key}"} if key else {}
+
+    def _ssl_context(self):
+        return getattr(getattr(self._client, "transport", None), "_ssl_context", None)
 
     def _no_key_hint(self) -> str:
         """Why no key was sent, and how to give one."""
@@ -279,7 +310,14 @@ class HyperNixT1Adapter(ModelAdapter):
             if k in s:
                 body[k] = s[k] if k != "stop" else list(s[k])
         t0 = time.monotonic()
-        data = self._post("/inference/chat", body)
+        if self.stream:
+            try:
+                data = self._chat_stream(body, t0)
+            except _NoStream:
+                self.stream = False
+                data = self._post("/inference/chat", body)
+        else:
+            data = self._post("/inference/chat", body)
         if data.get("substituted"):
             raise AdapterError(f"T1 server substituted {data.get('model')!r} for {self.model!r}; refusing to score it")
         backend_name = data.get("backend_name") or None
@@ -292,6 +330,111 @@ class HyperNixT1Adapter(ModelAdapter):
                  "backend_name": backend_name}
         return Generation(text=str(data.get("content", "")), latency=time.monotonic() - t0, usage=usage,
                           model=data.get("model"), finish_reason=data.get("finish_reason"))
+
+    def _chat_stream(self, body: dict[str, Any], t0: float) -> dict[str, Any]:
+        """``POST /inference/chat/stream``, read to the end, as the same dict
+        ``/inference/chat`` returns. Past the request timeout the connection
+        is closed: T1 then closes its stream to the backend, and llama.cpp
+        stops writing a reply nobody reads — the plain endpoint cannot."""
+        url = self.base_url + "/inference/chat/stream"
+        req = urllib.request.Request(url, data=json.dumps(body).encode(), method="POST", headers={
+            "Content-Type": "application/json", "Accept": "text/event-stream", "User-Agent": "rsostb",
+            **self._auth_headers()})
+        try:
+            resp = urllib.request.urlopen(req, timeout=self.timeout, context=self._ssl_context())  # noqa: S310
+        except urllib.error.HTTPError as exc:
+            detail = exc.read().decode("utf-8", "replace")[:500]
+            if exc.code in (404, 405):
+                raise _NoStream() from exc
+            msg = f"T1 /inference/chat/stream failed: HTTP {exc.code}: {detail}"
+            if exc.code == 504 or (exc.code in (502, 503) and is_timeout(Exception(detail))):
+                raise RequestTimeout(msg) from exc
+            raise self._failed("/inference/chat/stream", AdapterError(f"HTTP {exc.code}: {detail}")) from exc
+        except (urllib.error.URLError, TimeoutError, ConnectionError, OSError) as exc:
+            if is_timeout(exc):
+                raise RequestTimeout(f"no reply from {url} within {self.timeout:g}s") from exc
+            raise AdapterError(f"T1 /inference/chat/stream failed: {getattr(exc, 'reason', exc)}") from exc
+        header: dict[str, Any] = {}
+        parts: list[str] = []
+        usage: dict[str, Any] = {}
+        finish = None
+        pieces = 0
+        with resp:
+            try:
+                for raw in resp:
+                    if time.monotonic() - t0 > self.timeout:
+                        raise RequestTimeout(f"no complete reply from {url} within {self.timeout:g}s; stopped it "
+                                             f"after {pieces} pieces, so the server stops writing it too")
+                    line = raw.decode("utf-8", "replace").strip()
+                    if line.startswith(": hypernix inference open"):
+                        try:
+                            header = json.loads(line.split("open", 1)[1])
+                        except ValueError:
+                            pass
+                        continue
+                    if not line.startswith("data:"):
+                        continue
+                    payload = line[5:].strip()
+                    if payload == "[DONE]":
+                        break
+                    try:
+                        chunk = json.loads(payload)
+                    except ValueError:
+                        continue
+                    if chunk.get("error"):
+                        err = chunk["error"]
+                        text = json.dumps(err) if not isinstance(err, str) else err
+                        cls = RequestTimeout if is_timeout(Exception(text)) else AdapterError
+                        raise cls(f"T1 /inference/chat/stream failed mid-reply: {text[:400]}")
+                    for choice in chunk.get("choices") or []:
+                        delta = (choice or {}).get("delta") or {}
+                        if delta.get("content"):
+                            parts.append(str(delta["content"]))
+                            pieces += 1
+                        if (choice or {}).get("finish_reason"):
+                            finish = choice["finish_reason"]
+                    if chunk.get("usage"):
+                        usage = chunk["usage"]
+            except (TimeoutError, urllib.error.URLError, ConnectionError) as exc:
+                if is_timeout(exc):
+                    raise RequestTimeout(f"the reply from {url} stalled for {self.timeout:g}s after {pieces} "
+                                         "pieces") from exc
+                raise AdapterError(f"T1 /inference/chat/stream broke off: {exc}") from exc
+        return {"model": header.get("model"), "substituted": header.get("substituted"),
+                "backend": header.get("backend"), "backend_name": header.get("backend_name"),
+                "content": "".join(parts), "finish_reason": finish,
+                "input_tokens": usage.get("prompt_tokens"),
+                # A streamed piece is one token from llama.cpp: the count stands in when usage is not sent.
+                "output_tokens": usage.get("completion_tokens") or pieces or None}
+
+    def recover(self) -> str | None:
+        """Restart T1's HyperNix runner when it serves this model but has
+        stopped answering (a slot stuck on a reply): ``POST /runner/unload``
+        then ``/runner/load`` with the same model and placement. Returns what
+        was done, or None when it is not this adapter's to fix."""
+        if not self.restart_runner:
+            return None
+        headers = self._auth_headers()
+        try:
+            st = http_json(self.base_url + "/runner/status", None, headers, timeout=20, retries=0, method="GET")
+        except AdapterError:
+            return None
+        model = st.get("model") or {}
+        if not st.get("loaded") or model.get("model_id") != self.model:
+            return None
+        load: dict[str, Any] = {"model_id": self.model}
+        placement = model.get("placement") or {}
+        if placement.get("explicit"):
+            load["gpu_layers"] = placement.get("gpu_layers")
+            load["backend"] = placement.get("backend") or "auto"
+        if model.get("context_length"):
+            load["context_length"] = model["context_length"]
+        try:
+            http_json(self.base_url + "/runner/unload", {}, headers, timeout=120, retries=0)
+            http_json(self.base_url + "/runner/load", load, headers, timeout=900, retries=0)
+        except AdapterError as exc:
+            return f"tried to restart T1's HyperNix runner for {self.model}, but it failed: {exc}"
+        return f"restarted T1's HyperNix runner for {self.model} (POST /runner/unload, /runner/load)"
 
     def server_status(self) -> dict[str, Any]:
         """``GET /status``, for the server version in the results. Asked with a

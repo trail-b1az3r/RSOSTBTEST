@@ -36,6 +36,8 @@ rsostb benchmark --adapter hypernix-t1 --model t1-small --output t1-small.jsonl
 | `--adapter-option timeout=…` | 300 s |
 | `--adapter-option use_sdk=false` | force the standard-library client |
 | `--adapter-option backend=hypernix` | require answers from the HyperNix runner (`lmstudio` also accepted) |
+| `--adapter-option stream=false` | use `POST /inference/chat` instead of `/inference/chat/stream` |
+| `--adapter-option restart_runner=false` | never restart T1's HyperNix runner (see below) |
 
 Waiter's key is only ever sent to the server it was saved for: with
 `--base-url` naming another server, set a key variable instead (the error
@@ -83,6 +85,26 @@ that backend is missing, not answering, or (for the runner) serving a
 different model — and then refuses any reply whose `backend_name` differs.
 A server too old to report `backend_name` cannot satisfy a requirement, so
 those replies are refused rather than assumed.
+
+### Streaming, and a runner that stops answering
+
+Replies are read from `POST /inference/chat/stream` (servers without it get
+`/inference/chat`). When a reply runs past `--request-timeout`, rsostb
+closes the stream; a T1 server with the HyperNix fix of 2026-10-08
+(`t1api: a caller leaving a stream stops the backend's reply`) then closes
+its stream to the runner, and llama.cpp stops writing the reply at once.
+Older T1 servers, and the non-streaming endpoint, keep the backend writing
+the whole reply after the caller has gone, holding its one slot: requests
+behind it wait.
+
+If the runner still does not answer — T1 answers and lists the runner as
+up, but no reply comes, before the run (the test request) or after a
+timeout — rsostb restarts it through T1: `GET /runner/status`, then
+`POST /runner/unload` and `POST /runner/load` with the same model, GPU
+layers and context, and carries on. It only does this when the runner is
+serving the model being benchmarked, it needs a key that may load models
+(admin, or `T1_RUNNER_SWITCH_PERM`), and `--adapter-option
+restart_runner=false` turns it off.
 
 ### Slow models and timeouts
 
