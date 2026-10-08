@@ -13,6 +13,16 @@
   be loaded stops the run with the reason.
 * A run that stops at the test request suggests checking `--base-url` and
   the API key only for adapters that talk to a server.
+* **`rsostb validate results.jsonl` on a file that is not there** said
+  `malformed JSON: Expecting value: line 1 column 1`: a missing path was
+  parsed as JSON text. It now says `no such file`, and names the file the
+  run did write when only the extension differs (`results.json`, the
+  default `--output`).
+* **`rsostb submit` to a results dataset that does not exist** reported the
+  Hub's bare 404. It now says the dataset is missing (or the token cannot
+  see it) and what to do: `--create-repo` creates it first (once, as its
+  owner), or pick another with `--repo`, or keep it with `--to-dir`. The
+  default, `ray0rf1re/RSOSTBTEST-pro-results`, had never been created.
 
 ## 1.0.6 — 2026-10-08
 
