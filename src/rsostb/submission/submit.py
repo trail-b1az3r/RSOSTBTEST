@@ -42,8 +42,17 @@ def prepare_submission(doc: dict[str, Any], report: ValidationReport) -> tuple[d
     return entry, doc
 
 
+def _repo_missing(exc: BaseException) -> bool:
+    """The Hub's 404 for a repository that is not there (or not visible)."""
+    from ..hf.errors import hub_status
+
+    return type(exc).__name__ == "RepositoryNotFoundError" or (
+        hub_status(exc) == 404 and "Repository not found" in str(exc))
+
+
 def submit_results(path: str | Path, *, repo: str | None = None, token_env: str = "HF_TOKEN", dry_run: bool = False,
-                   to_dir: str | Path | None = None, rescore: bool = True, bench=None) -> SubmitResult:
+                   to_dir: str | Path | None = None, rescore: bool = True, bench=None,
+                   create_repo: bool = False) -> SubmitResult:
     doc = read_results(path)
     report = validate_results(doc, bench, rescore=rescore)
     if not report.ok:
@@ -81,13 +90,28 @@ def submit_results(path: str | Path, *, repo: str | None = None, token_env: str 
         CommitOperationAdd(path_in_repo=f"entries/{sid}.json",
                            path_or_fileobj=json.dumps(entry, indent=2, ensure_ascii=False).encode("utf-8")),
     ]
-    try:
-        info = api.create_commit(repo_id=repo, repo_type="dataset", operations=ops, create_pr=True,
+    def commit():
+        return api.create_commit(repo_id=repo, repo_type="dataset", operations=ops, create_pr=True,
                                  commit_message=f"Submission {sid}: {entry['model']['name']} on v{doc['benchmark_version']}",
                                  commit_description="Submitted with `rsostb submit`. Validation: " + report.status)
+
+    try:
+        try:
+            info = commit()
+        except Exception as exc:
+            if not (create_repo and _repo_missing(exc)):
+                raise
+            api.create_repo(repo, repo_type="dataset", exist_ok=True)
+            info = commit()
     except Exception as exc:  # network / auth / permissions: the results were valid, the upload failed
         from ..hf.errors import hub_error
 
+        if _repo_missing(exc):
+            raise SubmissionError(
+                f"validated (submission id {sid}), but the results dataset datasets/{repo} does not exist, or this "
+                f"token cannot see it. If it is yours, create it with `rsostb submit {path} --create-repo` (once) or "
+                "at https://huggingface.co/new-dataset; otherwise pick another with --repo (or "
+                "$RSOSTB_RESULTS_REPO), or keep the submission locally with --to-dir.") from exc
         raise SubmissionError(f"validated (submission id {sid}) but the upload to datasets/{repo} failed: "
                               f"{hub_error(exc)}; retry, or use --to-dir") from exc
     return SubmitResult(True, sid, report, destination=getattr(info, "pr_url", None) or str(info), entry=entry)

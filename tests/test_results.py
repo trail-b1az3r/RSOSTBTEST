@@ -153,3 +153,63 @@ def test_leaderboard_api(tmp_path, bench, echo_doc, noisy_doc):
     assert all("response" not in json.dumps(e) or True for e in api["entries"])
     cmp = comparison(api["entries"], [e["submission_id"] for e in api["entries"]])
     assert cmp["comparable"]
+
+
+def test_a_missing_results_file_is_not_parsed_as_json(tmp_path, example_results):
+    import shutil
+
+    shutil.copy(example_results / "noisy-oracle.jsonl.gz", tmp_path / "results.jsonl.gz")
+    rep = validate_results(str(tmp_path / "results.jsonl"))
+    assert rep.status == "rejected"
+    assert rep.errors == [f"unreadable results: no such file: {tmp_path / 'results.jsonl'} "
+                          f"(did you mean {tmp_path / 'results.jsonl.gz'}?)"]
+    assert validate_results(str(tmp_path / "nothing.json")).errors == [
+        f"unreadable results: no such file: {tmp_path / 'nothing.json'}"]
+
+
+class _NotFound(Exception):
+    pass
+
+
+_NotFound.__name__ = "RepositoryNotFoundError"
+
+
+@pytest.fixture()
+def fake_hub(monkeypatch):
+    """A Hugging Face Hub on which the results dataset does not exist until it is created."""
+    import sys
+    import types
+
+    state = {"exists": False, "created": [], "commits": []}
+
+    class HfApi:
+        def __init__(self, token=None):
+            pass
+
+        def create_commit(self, repo_id, **kw):
+            if not state["exists"]:
+                raise _NotFound("404 Client Error. Repository not found")
+            state["commits"].append((repo_id, kw["create_pr"]))
+            return types.SimpleNamespace(pr_url=f"https://huggingface.co/datasets/{repo_id}/discussions/1")
+
+        def create_repo(self, repo_id, repo_type=None, exist_ok=False):
+            state["created"].append((repo_id, repo_type))
+            state["exists"] = True
+
+    monkeypatch.setitem(sys.modules, "huggingface_hub",
+                        types.SimpleNamespace(HfApi=HfApi, CommitOperationAdd=lambda **kw: kw))
+    monkeypatch.setenv("HF_TOKEN", "hf_test")
+    monkeypatch.delenv("RSOSTB_RESULTS_REPO", raising=False)
+    return state
+
+
+def test_submitting_to_a_dataset_that_does_not_exist_says_how_to_make_it(fake_hub, example_results):
+    from rsostb.submission.submit import SubmissionError, submit_results
+
+    src = example_results / "noisy-oracle.jsonl.gz"
+    with pytest.raises(SubmissionError, match=r"datasets/ray0rf1re/RSOSTBTEST-pro-results does not exist.*--create-repo"):
+        submit_results(src, rescore=False)
+    assert not fake_hub["created"]                                   # nothing is created unasked
+    res = submit_results(src, rescore=False, create_repo=True)
+    assert res.accepted and fake_hub["created"] == [("ray0rf1re/RSOSTBTEST-pro-results", "dataset")]
+    assert fake_hub["commits"] == [("ray0rf1re/RSOSTBTEST-pro-results", True)]

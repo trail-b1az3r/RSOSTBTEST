@@ -90,6 +90,7 @@ export HF_TOKEN=hf_...                 # write token; read from the environment 
 rsostb submit results.jsonl            # validates, then opens a PR on the results dataset
 rsostb submit results.jsonl --dry-run  # validate and show what would be uploaded
 rsostb submit results.jsonl --to-dir ../RSOSTBTEST-pro-results   # store locally instead
+rsostb submit results.jsonl --create-repo   # the dataset's owner, once: create it if it is missing
 ```
 
 The results dataset defaults to `ray0rf1re/RSOSTBTEST-pro-results`

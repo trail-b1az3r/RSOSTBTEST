@@ -370,3 +370,29 @@ def test_a_stuck_server_is_restarted_and_the_run_goes_on(monkeypatch, capsys):
     doc = run_benchmark(a, categories=["math"], limit_per_category=2, progress=print_progress)
     assert len(doc["task_results"]) == 2
     assert "restarted the model server; trying the test request again" in capsys.readouterr().err
+
+
+def test_loading_a_model_is_not_held_to_the_test_requests_limit(monkeypatch, capsys):
+    """hf-local downloads a model on first use: 2 GB took longer than the
+    120 s the test request may take, and the run was aborted."""
+    real = runner_mod.load_runner_config
+    monkeypatch.setattr(runner_mod, "load_runner_config", lambda: {**real(), "preflight_timeout_seconds": 0.2})
+
+    class Downloads(Writer):
+        loads_model = True
+
+        def prepare(self):
+            threading.Event().wait(0.6)
+
+    doc = run_benchmark(Downloads(), categories=["math"], limit_per_category=1, progress=print_progress)
+    assert len(doc["task_results"]) == 1
+    assert "loading the model" in capsys.readouterr().err
+
+    class Broken(Writer):
+        loads_model = True
+
+        def prepare(self):
+            raise OSError("disk full")
+
+    with pytest.raises(RunAborted, match="could not be loaded.*disk full"):
+        run_benchmark(Broken(), categories=["math"], limit_per_category=1)

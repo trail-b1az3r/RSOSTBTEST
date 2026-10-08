@@ -411,6 +411,17 @@ def run_benchmark(
     done_count = len(results)
     lock = threading.Lock()
     retries, backoff = int(cfg.get("max_retries", 2)), float(cfg.get("retry_backoff_seconds", 2.0))
+    if pending and getattr(adapter, "loads_model", False):
+        # In-process models load (and download) on first use. That is not the
+        # server being slow, so it happens here, outside the test request's
+        # time limit — a 2 GB download used to fail the run at 120 s.
+        if progress:
+            say("loading the model (it is downloaded the first time)...")
+        try:
+            with Waiting(adapter, "the model to load", enabled=progress is not None):
+                adapter.prepare()
+        except Exception as exc:  # noqa: BLE001 - reported as the run's reason
+            raise RunAborted(f"the model could not be loaded, so nothing was run: {type(exc).__name__}: {exc}") from exc
     if check_model and pending and getattr(adapter, "kind", "model") == "model":
         if progress:
             say("checking that the model answers (one short test request)...")

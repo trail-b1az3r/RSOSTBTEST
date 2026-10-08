@@ -77,6 +77,20 @@ def _close(a: Any, b: Any, tol: float) -> bool:
         return False
 
 
+def _sibling_hint(path: Path) -> str:
+    """" (did you mean results.json?)" when the run wrote the other spelling."""
+    stem = path.name
+    for suffix in (".jsonl.gz", ".json.gz", ".jsonl", ".json"):
+        if stem.endswith(suffix):
+            stem = stem[: -len(suffix)]
+            break
+    for suffix in (".json", ".jsonl", ".json.gz", ".jsonl.gz"):
+        other = path.with_name(stem + suffix)
+        if other != path and other.is_file() and other.stat().st_size:
+            return f" (did you mean {other}?)"
+    return ""
+
+
 def validate_results(src: str | Path | dict[str, Any], bench: Benchmark | None = None, *, rescore: bool = False,
                      rescore_execution: bool = False, sandbox: str = "auto") -> ValidationReport:  # noqa: C901
     rep = ValidationReport()
@@ -85,8 +99,12 @@ def validate_results(src: str | Path | dict[str, Any], bench: Benchmark | None =
             doc = src
         elif isinstance(src, (str, Path)) and Path(str(src)).exists():
             doc = read_results(src)
+        elif isinstance(src, str) and src.lstrip().startswith("{"):
+            doc = parse_results_text(src)
         else:
-            doc = parse_results_text(str(src))
+            # A path that is not there. It used to be parsed as JSON text, which
+            # reported "malformed JSON: Expecting value" for a mistyped name.
+            raise ResultsFormatError(f"no such file: {src}{_sibling_hint(Path(str(src)))}")
     except (ResultsFormatError, OSError, UnicodeDecodeError) as exc:
         rep.status = "rejected"
         rep.error(f"unreadable results: {exc}")
