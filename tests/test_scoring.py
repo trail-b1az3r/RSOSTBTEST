@@ -139,8 +139,8 @@ def test_unreleased_scoring_version_is_rejected():
         get_scorer("v999")
 
 
-def test_v2_scorer_available_and_bounded(bench):
-    scorer = get_scorer("v2")
+def test_v1_balanced_scorer_available_and_bounded(bench):
+    scorer = get_scorer("v1-balanced")
     _, scores = scorer.score_run(_results(bench, lambda t: 1.0), {t.id: t for t in bench.tasks},
                                  bench.config, bench.scoring)
     assert scores["rsostb_score"] == 150_000.0

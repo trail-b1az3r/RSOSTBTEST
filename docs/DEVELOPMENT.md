@@ -113,7 +113,7 @@ Weights and penalties are configuration, but changing them changes the
 scoring hash, which invalidates comparisons. Do it only together with a new
 benchmark version and a frozen manifest, and explain the change in
 `docs/SCORING.md` and the changelog. New aggregation ideas belong in a new
-scoring version module (`scoring/v2.py` is the example) rather than edits to
+scoring version module (`scoring/v1_balanced.py` and `scoring/v2.py` are examples) rather than edits to
 `v1`.
 
 `tests/test_scoring_v1_regression.py` re-scores every saved v1 result

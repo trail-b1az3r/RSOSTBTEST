@@ -300,9 +300,12 @@ including grading fields, and the resources) and the `scoring_config_hash`
   does the same for every saved baseline (`tests/test_scoring_v1_regression.py`),
   so a change to v1 cannot ship unnoticed.
 
-Scoring **v2** (category-balanced mean of per-category scores) ships as an
-experimental alternative — `rsostb score results.jsonl --scoring-version v2`
-re-aggregates an existing run — and is not used for the leaderboard.
+Scoring **v2** ([SCORING-V2.md](SCORING-V2.md)) is available with
+`rsostb score results.jsonl --scoring-version v2 --explain` and becomes the
+pinned scoring of a later benchmark version; it is not used for the
+benchmark 1.1 leaderboard. **v1-balanced** (category-balanced mean of
+per-category scores; called "v2" until Scoring v2 took the name) remains an experimental
+alternative.
 
 ## Determinism
 
