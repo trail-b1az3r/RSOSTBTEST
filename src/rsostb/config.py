@@ -204,6 +204,13 @@ def load_scoring_config(root: Path | None = None, override: Path | None = None,
     return ScoringConfig(raw=raw)
 
 
+def load_pinned_scoring(root: Path | None = None) -> ScoringConfig:
+    """The scoring a benchmark tree pins: ``scoring_version`` in benchmark.yaml
+    (v1, the default for trees that predate the key, reads scoring.yaml)."""
+    version = load_benchmark_config(root).raw.get("scoring_version")
+    return load_scoring_config(root, version=version)
+
+
 def load_runner_config(root: Path | None = None) -> dict[str, Any]:
     return copy.deepcopy(load_yaml((root or benchmark_dir()) / "configs" / "runner.yaml"))
 
@@ -241,5 +248,5 @@ def scoring_fingerprint_payload(bench: BenchmarkConfig, scoring: ScoringConfig) 
 
 def scoring_config_hash(bench: BenchmarkConfig | None = None, scoring: ScoringConfig | None = None) -> str:
     bench = bench or load_benchmark_config()
-    scoring = scoring or load_scoring_config()
+    scoring = scoring or load_pinned_scoring()
     return sha256_obj(scoring_fingerprint_payload(bench, scoring))

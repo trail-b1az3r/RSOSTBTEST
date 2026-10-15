@@ -74,6 +74,12 @@ def validate_config(raw: dict[str, Any]) -> None:  # noqa: C901
         if not lo <= 0 < hi:
             raise ScoringError("scoring range must satisfy min <= 0 < max")
         scale = _within(raw["raw_scale"], 1, 10_000, "raw_scale")
+        tp = raw["task_points"]
+        if not _finite(tp["default_min"], "task_points.default_min") <= 0 < _finite(tp["default_max"],
+                                                                                   "task_points.default_max"):
+            raise ScoringError("task_points defaults must satisfy min <= 0 < max")
+        if raw.get("judge_unavailable_policy", "zero") not in ("zero", "exclude"):
+            raise ScoringError("judge_unavailable_policy must be 'zero' or 'exclude'")
         for k, v in raw["weight_classes"].items():
             _within(v, 1e-6, 100, f"weight_classes.{k}")
         levels = raw["difficulty_levels"]

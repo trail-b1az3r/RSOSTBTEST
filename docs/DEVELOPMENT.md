@@ -117,8 +117,8 @@ scoring version module (`scoring/v1_balanced.py` and `scoring/v2.py` are example
 `v1`.
 
 `tests/test_scoring_v1_regression.py` re-scores every saved v1 result
-(the benchmark 1.1 baselines in `examples/results/`, the 1.0 baselines in
-`tests/regression/v1/benchmark-1.0/` and the hand-built
+(the benchmark 1.1 and 1.0 baselines in `tests/regression/v1/benchmark-1.1/`
+and `tests/regression/v1/benchmark-1.0/` and the hand-built
 `tests/regression/v1/edge-cases.json`) against its frozen benchmark inputs and
 compares every number with what was saved and with `golden.json`. When it
 fails, v1 changed: fix the change, never the fixtures.

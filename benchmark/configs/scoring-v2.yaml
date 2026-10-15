@@ -24,6 +24,20 @@ range:
 # Raw task score: credit (0..1) times this.
 raw_scale: 100
 
+# Per-task point fields every task file carries (defaults and lint limits).
+# v2 does not use them for scoring; they keep task data, and so the dataset
+# hash, identical to what v1 sees.
+task_points:
+  default_max: 1000
+  default_min: -500
+  limit_max: 5000
+  limit_min: -5000
+
+# Rubric criteria that need an LLM judge when none is configured earn nothing
+# ("zero"), as in v1; tasks whose grader cannot run earn zero credit.
+judge_unavailable_policy: zero
+unavailable_policy: zero
+
 # "Minor weighted questions": task weight class. Same values as v1.
 weight_classes:
   micro: 0.10

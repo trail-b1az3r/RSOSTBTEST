@@ -6,7 +6,7 @@ import random
 import pytest
 import yaml
 
-from rsostb.config import load_benchmark_config, load_scoring_config, scoring_config_hash
+from rsostb.config import load_benchmark_config, load_pinned_scoring, load_scoring_config, scoring_config_hash
 from rsostb.scoring import get_scorer
 from rsostb.scoring.common import (
     ScoringError,
@@ -17,6 +17,24 @@ from rsostb.scoring.common import (
     task_weight,
     to_reported,
 )
+from rsostb.scoring.frozen import load_frozen
+
+
+class _V1Bench:
+    """Benchmark 1.1 as scoring v1 sees it, from its frozen inputs: these tests
+    pin v1 behaviour, and the working tree has moved on to 1.2 / v2."""
+
+    def __init__(self, frozen):
+        self.config, self.scoring = frozen.bench, frozen.scoring
+        self.tasks = [frozen.tasks[k] for k in sorted(frozen.tasks)]
+
+    def active_tasks(self):
+        return [t for t in self.tasks if t.active]
+
+
+@pytest.fixture(scope="module")
+def bench():
+    return _V1Bench(load_frozen("1.1"))
 
 
 def _results(bench, credit_fn, events_fn=lambda t: {}):
@@ -131,7 +149,7 @@ def test_changing_a_category_weight_changes_the_scoring_hash(tmp_benchmark):
     p = tmp_benchmark / "configs" / "benchmark.yaml"
     text = p.read_text()
     p.write_text(text.replace("weight: 0.70", "weight: 0.71", 1))
-    assert scoring_config_hash(load_benchmark_config(tmp_benchmark), load_scoring_config(tmp_benchmark)) != base
+    assert scoring_config_hash(load_benchmark_config(tmp_benchmark), load_pinned_scoring(tmp_benchmark)) != base
 
 
 def test_unreleased_scoring_version_is_rejected():

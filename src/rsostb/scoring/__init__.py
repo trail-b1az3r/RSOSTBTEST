@@ -25,15 +25,17 @@ def get_scorer(version: str) -> ModuleType:
 
 
 def scoring_for(version: str | None, bench):
-    """The scoring configuration ``version`` runs with, for a loaded benchmark."""
-    if not version or version == bench.scoring.version or version == "v1-balanced":
+    """The scoring configuration ``version`` runs with, for a loaded benchmark.
+    v1-balanced re-aggregates v1, so it reads v1's configuration."""
+    base = "v1" if version == "v1-balanced" else version
+    if not base or base == bench.scoring.version:
         return bench.scoring
     from ..config import load_scoring_config
 
     get_scorer(version)
-    scoring = load_scoring_config(bench.root, version=version)
-    if scoring.version != version:
-        raise ScoringError(f"no configuration for scoring {version} (configs/scoring-{version}.yaml)")
+    scoring = load_scoring_config(bench.root, version=base)
+    if scoring.version != base:
+        raise ScoringError(f"no configuration for scoring {base} (configs/scoring-{base}.yaml)")
     return scoring
 
 

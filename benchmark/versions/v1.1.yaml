@@ -6,7 +6,7 @@ dataset_version: 1.1.0
 scoring_version: v1
 min_runner_version: 1.0.1
 released: '2026-10-06'
-status: current
+status: superseded
 dataset_hash: 812f97be5b78211830c465f5e908445cafde9914b21e0028c6979be54e82d275
 scoring_config_hash: ab8426d8cf964067fe2d63324600d01caf47086fa3b6ff7863ef388aa0a276e3
 task_count: 944

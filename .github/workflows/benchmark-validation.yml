@@ -48,7 +48,7 @@ jobs:
           from rsostb.submission.results_io import read_results
           b = load_benchmark()
           counts = collections.Counter(t.category for t in b.active_tasks())
-          assert len(counts) == 36 and min(counts.values()) >= 25, counts
+          assert len(counts) == 42 and min(counts.values()) >= 25, counts
           doc = read_results("selfcheck.jsonl")
           s = doc["scores"]["rsostb_score"]
           assert -500 <= s <= 150000, s
@@ -60,6 +60,9 @@ jobs:
           for f in examples/results/*.jsonl.gz; do
             rsostb validate "$f" --rescore --execute --sandbox process
           done
+
+      - name: Saved results of older benchmark versions re-score identically
+        run: rsostb version regress tests/regression/v1/benchmark-1.0/*.jsonl.gz tests/regression/v1/benchmark-1.1/*.jsonl.gz
 
       - name: Slow test suite
         run: python -m pytest -m slow -q --timeout=900

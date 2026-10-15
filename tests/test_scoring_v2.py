@@ -35,14 +35,14 @@ def _all(bench, credit=1.0, events=None, bonus=None, **extra):
 
 def test_versions_and_configs_are_separate(bench, v2cfg):
     assert get_scorer("v2") is v2 and get_scorer("v1-balanced") is v1_balanced
-    assert scoring_for("v1", bench) is bench.scoring
-    assert scoring_for("v1-balanced", bench) is bench.scoring
-    assert scoring_for("v2", bench).version == "v2"
-    # v2's numbers never reach the v1 hash (the v1 manifest still matches)
+    assert scoring_for("v2", bench) is bench.scoring                    # benchmark 1.2 pins v2
+    assert scoring_for("v1", bench).version == "v1"
+    assert scoring_for("v1-balanced", bench).raw == scoring_for("v1", bench).raw
     assert bench.scoring_config_hash == bench.manifest["scoring_config_hash"]
-    assert scoring_config_hash(bench.config, v2cfg) != bench.scoring_config_hash
+    assert scoring_config_hash(bench.config, v2cfg) == bench.scoring_config_hash
+    assert scoring_config_hash(bench.config, scoring_for("v1", bench)) != bench.scoring_config_hash
     with pytest.raises(ScoringError, match="needs the v2 configuration"):
-        v2.score_run([], {}, bench.config, bench.scoring)
+        v2.score_run([], {}, bench.config, scoring_for("v1", bench))
 
 
 @pytest.mark.parametrize("path, value, match", [

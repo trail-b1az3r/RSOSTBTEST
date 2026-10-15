@@ -68,7 +68,7 @@ def main() -> None:
     edge = edge_cases()
     (HERE / "edge-cases.json").write_text(json.dumps(edge, indent=1, sort_keys=True) + "\n")
     golden = {}
-    files = sorted((ROOT / "examples" / "results").glob("*.jsonl.gz")) + sorted((HERE / "benchmark-1.0").glob("*.jsonl.gz"))
+    files = sorted((HERE / "benchmark-1.1").glob("*.jsonl.gz")) + sorted((HERE / "benchmark-1.0").glob("*.jsonl.gz"))
     for p in files:
         doc = read_results(p)
         golden[str(p.relative_to(ROOT))] = _entry(doc)
