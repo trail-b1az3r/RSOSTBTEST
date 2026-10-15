@@ -3,6 +3,7 @@
 # exact validated code from the GitHub commit it was built from.
 gradio>=5.0,<6
 pandas>=2.0
+pillow>=10.0
 plotly>=5.18
 PyYAML>=6.0
 jsonschema>=4.18

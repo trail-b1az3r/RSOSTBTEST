@@ -395,6 +395,7 @@ def _hex(col: str, alpha: int = 255) -> tuple[int, int, int, int]:
 
 
 def _font(size: float, bold: bool = False):
+    _require_pillow()
     from PIL import ImageFont
 
     for name in (("DejaVuSans-Bold.ttf" if bold else "DejaVuSans.ttf"), "Arial.ttf"):
@@ -408,8 +409,16 @@ def _font(size: float, bold: bool = False):
         return ImageFont.load_default()
 
 
+def _require_pillow():
+    try:
+        import PIL  # noqa: F401
+    except ImportError as exc:
+        raise ImportError("PNG graphs need Pillow: pip install 'RSOSTB[graphs]' (SVG, CSV and JSON need nothing)") from exc
+
+
 def to_png(g: dict[str, Any], scale: int = 2) -> bytes:
     """The same chart as a PNG (Pillow), at ``scale`` × resolution."""
+    _require_pillow()
     from PIL import Image, ImageDraw
 
     c = layout(g)
