@@ -49,6 +49,7 @@ def render_markdown(r: dict[str, Any]) -> str:
             ["95% bootstrap interval", f"{ci['low']:,.2f} – {ci['high']:,.2f}" if ci else "—"],
         ]),
         "",
+        *_v2_sections(r),
         "## Metrics",
         "",
         "Percent of achievable weighted points on each subset (negative = net penalties).",
@@ -106,3 +107,17 @@ def render_markdown(r: dict[str, Any]) -> str:
     lines += ["", "## Reading these results", ""] + [f"- {c}" for c in r["caveats"]]
     lines += ["", f"_Generated {r.get('generated_at')} · compat key `{r.get('compat_key')}`_", ""]
     return "\n".join(lines)
+
+
+
+def _v2_sections(r: dict[str, Any]) -> list[str]:
+    from .builder import v2_tables
+
+    out: list[str] = []
+    for t in v2_tables(r):
+        if t.get("heading"):
+            out += [f"## {t['heading']}", ""]
+        if t.get("intro"):
+            out += [t["intro"], ""]
+        out += [_table(t["headers"], t["rows"]), ""]
+    return out

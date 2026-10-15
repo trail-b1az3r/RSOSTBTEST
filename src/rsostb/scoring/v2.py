@@ -124,6 +124,17 @@ def validate_config(raw: dict[str, Any]) -> None:  # noqa: C901
         eff = raw["efficiency"]
         _within(eff["weight"], *EFFICIENCY_WEIGHT_RANGE, "efficiency.weight")
         _within(eff["span"], 0, 0.2 * hi, "efficiency.span")
+        comps = eff["components"]
+        if set(comps) - {"tokens", "speed"} or not comps:
+            raise ScoringError("efficiency.components must be tokens and/or speed")
+        if sum(_within(v, 0, 1, f"efficiency.components.{k}") for k, v in comps.items()) <= 0:
+            raise ScoringError("efficiency.components must not all be zero")
+        _within(eff["reference_output_tokens_per_task"], 1, 1e6, "efficiency.reference_output_tokens_per_task")
+        for k, v in eff["reference_tokens_per_second"].items():
+            if k in ("remote", "unknown"):
+                raise ScoringError(f"efficiency.reference_tokens_per_second.{k}: no speed reference for {k} hardware")
+            _within(v, 1e-3, 1e6, f"efficiency.reference_tokens_per_second.{k}")
+        _within(eff["min_measured_share"], 0, 1, "efficiency.min_measured_share")
     except (KeyError, TypeError, AttributeError) as exc:
         raise ScoringError(f"scoring-v2 config is incomplete: {exc!r}") from None
 
