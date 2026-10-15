@@ -27,10 +27,13 @@ def metric_names() -> dict[str, str]:
 
 
 def leaderboard_rows(entries: list[dict[str, Any]], benchmark_version: str | None = None,
-                     kinds: tuple[str, ...] = ("model", "baseline", "synthetic"), full_only: bool = False) -> list[dict[str, Any]]:
+                     kinds: tuple[str, ...] = ("model", "baseline", "synthetic"), full_only: bool = False,
+                     scoring_version: str | None = None) -> list[dict[str, Any]]:
     rows = []
     for e in entries:
-        if benchmark_version and e["benchmark_version"] != benchmark_version:
+        if benchmark_version and benchmark_version != "all" and e["benchmark_version"] != benchmark_version:
+            continue
+        if scoring_version and scoring_version != "all" and e["scoring_version"] != scoring_version:
             continue
         if e["model"].get("kind", "model") not in kinds:
             continue
@@ -43,6 +46,10 @@ def leaderboard_rows(entries: list[dict[str, Any]], benchmark_version: str | Non
             "kind": m.get("kind", "model"),
             "provider": m.get("provider"),
             "benchmark_version": e["benchmark_version"],
+            "scoring_version": e["scoring_version"],
+            "effort": (e.get("effort") or {}).get("level"),
+            "hardware_class": e.get("hardware_class"),
+            "efficiency": (e.get("efficiency") or {}).get("normalized"),
             "rsostb_score": e["scores"]["rsostb_score"],
             "gpu_score": (e.get("gpu") or {}).get("gpu_score"),
             "tasks": e["n_tasks"],
@@ -63,24 +70,25 @@ def leaderboard_rows(entries: list[dict[str, Any]], benchmark_version: str | Non
 
 
 def comparison(entries: list[dict[str, Any]], ids: list[str]) -> dict[str, Any]:
+    from .views import methodology
+
     chosen = [e for e in entries if e["submission_id"] in ids]
-    keys = {e["compat_key"] for e in chosen}
-    return {
-        "entries": chosen,
-        "comparable": len(keys) <= 1,
-        "note": None if len(keys) <= 1 else
-        "These runs use different benchmark/scoring versions or judges; their scores are not directly comparable.",
-    }
+    m = methodology(chosen)
+    return {"entries": chosen, "comparable": m["comparable"], "methodology": m,
+            "note": " ".join(m["notes"]) or None}
 
 
 def build_api(store: LeaderboardStore, out: str | Path | None = None) -> dict[str, Any]:
     entries = store.entries()
-    versions = sorted({e["benchmark_version"] for e in entries})
+    from .views import benchmark_versions, scoring_versions
+
+    versions = benchmark_versions(entries)
     doc = {
         "api_version": API_VERSION,
         "benchmark": "RSOSTBTEST-pro",
         "generated_at": datetime.now(timezone.utc).isoformat(timespec="seconds"),
         "benchmark_versions": versions,
+        "scoring_versions": scoring_versions(entries),
         "categories": category_names(),
         "metrics": metric_names(),
         "entries": entries,

@@ -46,8 +46,9 @@ def test_space_seeds_baselines_but_not_oracle(app):
 
 
 def test_space_views(app):
-    df, _ = app.refresh_board(app.BENCHMARK_VERSION, ["model", "baseline", "synthetic"], False, "", True)
-    assert "RSOSTB Score" in df.columns and len(df) >= 4
+    df, _, note = app.refresh_board("all", "v2", ["model", "baseline", "synthetic"], False, "", True)
+    assert "RSOSTB Score" in df.columns and len(df) >= 4 and set(df["Scoring"]) == {"v2"} and not note
+    assert {"Effort", "Hardware", "Efficiency E"} <= set(df.columns)
     sid = app.STORE.entries()[0]["submission_id"]
     md, *_ = app.entry_details(sid)
     assert "RSOSTB Score" in md
@@ -128,3 +129,28 @@ def test_space_reports_a_gpu_function_to_zerogpu(tmp_path):
 
 def test_space_gpu_check_runs_without_a_gpu(app):
     assert "GPU" in app.zero_gpu_device()
+
+
+def test_space_shows_v1_history_and_labels_mixed_views(app):
+    assert app._scoring_choices() == ["all", "v1", "v2"] and app._default_scoring() == "v2"
+    df, _, note = app.refresh_board("all", "all", ["model", "baseline", "synthetic"], False, "", False)
+    assert set(df["Scoring"]) == {"v1", "v2"} and "Several scoring methods" in note
+    v1 = next(e for e in app.STORE.entries() if e["scoring_version"] == "v1")
+    md, *_ = app.entry_details(v1["submission_id"])
+    assert "shown exactly as recorded" in md
+    v2 = next(e for e in app.STORE.entries() if e["scoring_version"] == "v2")
+    note, _, _ = app.compare_entries([v1["submission_id"], v2["submission_id"]])
+    assert "different scales" in note
+
+
+def test_space_graphs_and_exports(app):
+    v2 = [e["submission_id"] for e in app.STORE.entries() if e["scoring_version"] == "v2"]
+    for mode, chart in (("One model vs all", "radar"), ("Selected models", "scatter"), ("Selected models", "line")):
+        html_out, _ = app.graph_view(mode, v2[0], v2[:3], "metrics", chart, "metric:research", "rsostb_score")
+        assert html_out.count("<svg") == 1
+    for fmt, magic in (("png", b"\x89PNG"), ("svg", b"<svg"), ("csv", b"Metrics"), ("json", b"{")):
+        path = app.graph_export(fmt, "One model vs all", v2[0], [], "metrics", "bar", "efficiency", "rsostb_score")
+        assert Path(path).read_bytes().startswith(magic), fmt
+    for fmt in ("csv", "json"):
+        path = app.export_table(fmt, "all", "all", ["model", "baseline", "synthetic"], False, "")
+        assert Path(path).stat().st_size > 100

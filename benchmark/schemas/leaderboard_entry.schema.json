@@ -55,6 +55,17 @@
     },
     "validation_status": {"enum": ["verified", "consistent", "rejected"]},
     "validation_notes": {"type": "array", "items": {"type": "string"}},
-    "gpu": {"type": ["object", "null"], "description": "General Public Use score (rsostb.scoring.gpu): derived from the RSOSTB Score, size and price; not part of the RSOSTB Score"}
+    "gpu": {"type": ["object", "null"], "description": "General Public Use score (rsostb.scoring.gpu): derived from the RSOSTB Score, size and price; not part of the RSOSTB Score"},
+    "effort": {"type": ["object", "null"], "description": "Effort level requested and applied (run.effort)", "additionalProperties": false,
+               "properties": {"requested": {"type": ["string", "null"], "maxLength": 16}, "level": {"type": "string", "maxLength": 16},
+                              "applied": {"type": "boolean"}, "mechanism": {"type": ["string", "null"], "maxLength": 32}}},
+    "hardware_class": {"type": ["string", "null"], "maxLength": 32},
+    "hardware_class_source": {"type": ["string", "null"], "maxLength": 16},
+    "efficiency": {"type": ["object", "null"], "description": "Normalised efficiency E and the raw measurements it came from (run.efficiency, recomputed at validation)",
+                   "additionalProperties": false,
+                   "properties": {"normalized": {"type": ["number", "null"]}, "known": {"type": "boolean"},
+                                  "output_tokens_per_second": {"type": ["number", "null"]}, "output_tokens_per_task": {"type": ["number", "null"]},
+                                  "tasks_measured": {"type": ["integer", "null"]}, "note": {"type": ["string", "null"], "maxLength": 300}}},
+    "breakdown": {"type": ["object", "null"], "description": "Scoring v2 terms: base, bonus, efficiency, penalties, final", "additionalProperties": {"type": ["number", "boolean", "null"]}}
   }
 }

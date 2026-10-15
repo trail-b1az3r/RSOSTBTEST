@@ -90,6 +90,10 @@ def publish_dataset(out_dir: str | Path = "dataset", *, repo: str = DEFAULT_DATA
     return 0
 
 
+#: Older benchmark versions' baselines, shown on a fresh leaderboard as history.
+HISTORY_SEEDS = {"1.1": "tests/regression/v1/benchmark-1.1"}
+
+
 def stage_space(repo_root: str | Path, dest: str | Path, *, sdk: str = "static", results_repo: str | None = None,
                 token: str | None = None) -> Path:
     """Assemble the Space. ``static``: the pre-computed leaderboard page (entries
@@ -111,6 +115,13 @@ def stage_space(repo_root: str | Path, dest: str | Path, *, sdk: str = "static",
         (dest / "seed").mkdir(parents=True, exist_ok=True)
         for p in sorted(seeds.glob("*.json*")):
             shutil.copy2(p, dest / "seed" / p.name)
+    for version, hist in HISTORY_SEEDS.items():
+        # Baselines of older benchmark versions: shown as they were scored (v1), never re-scored.
+        src = root / hist
+        if src.is_dir():
+            (dest / "seed" / "history" / version).mkdir(parents=True, exist_ok=True)
+            for p in sorted(src.glob("*.json*")):
+                shutil.copy2(p, dest / "seed" / "history" / version / p.name)
     bdest = dest / "benchmark"
     for part in ("tasks", "schemas", "configs", "versions", "resources"):
         shutil.copytree(root / "benchmark" / part, bdest / part, ignore=SPACE_IGNORE)

@@ -96,7 +96,7 @@
     "metadata/resources/orbit_spec.md": "b299fda46068b0dee83bfb52507367ba94c327df884775a6911655e80175b509",
     "metadata/resources/rv32_spec.md": "eb58ae2ce00890d156e3e31afa38cdc2da67564eed6586ab3fcf088c94050de9",
     "metadata/resources/web/pkghub.json": "a2a3972bee9c0b37dc4aabe0718a8f870fda289629541e64915bdf8ae29de7f6",
-    "metadata/schemas/leaderboard_entry.schema.json": "665b42913ef430b6192cd0fdfdc70eda115d25b7687469a382c548fadb0f1bad",
+    "metadata/schemas/leaderboard_entry.schema.json": "bb5294853d5464104144dc06df80932af9ed160fc307e6ab0a09db69e8f43b72",
     "metadata/schemas/result.schema.json": "abd45acccf3ac10e562feb87f47c3f6e6523e72abe8e3bdf009b4ddd726f68b7",
     "metadata/schemas/task.schema.json": "a450c9afa39a7a09fad577cc60e83651d2286ea18e817417564592e0aeac3de4",
     "metadata/schemas/tool.schema.json": "bb56608c623adccea220155b3795e2d63fec782ff3f4b145291f41d02bfbfd49",

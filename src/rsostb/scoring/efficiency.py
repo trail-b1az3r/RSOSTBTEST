@@ -45,12 +45,13 @@ def _tokens(usage: dict[str, Any] | None, keys: tuple[str, ...]) -> int | None:
 
 
 def measurements(task_results: list[dict[str, Any]]) -> dict[str, Any]:
-    """Raw measurements over the tasks that reported output tokens and a positive latency."""
+    """Raw measurements over the tasks that reported output tokens (> 0) and a positive latency."""
     rows = []
     for tr in task_results:
         out = _tokens(tr.get("usage"), _OUT)
         lat = tr.get("latency_seconds")
-        if out is None or not isinstance(lat, (int, float)) or not math.isfinite(lat) or lat <= 0:
+        # A reply with no output tokens says nothing about cost (synthetic runs report 0).
+        if not out or not isinstance(lat, (int, float)) or not math.isfinite(lat) or lat <= 0:
             continue
         rows.append((out, _tokens(tr.get("usage"), _IN) or 0, float(lat)))
     n = len(task_results)

@@ -31,10 +31,11 @@ from ..datasets.loader import load_benchmark
 from ..leaderboard.api import build_api
 from ..leaderboard.store import LeaderboardStore
 from ..submission.results_io import ResultsFormatError, read_results
-from ..version import BENCHMARK_NAME, BENCHMARK_VERSION, DATASET_VERSION, RUNNER_VERSION
+from ..version import BENCHMARK_NAME, BENCHMARK_VERSION, DATASET_VERSION, RUNNER_VERSION, SCORING_VERSION
 from .errors import hub_error, hub_status
 
 PLACEHOLDER = "__RSOSTB_DATA__"
+CHARTS_PLACEHOLDER = "/*__RSOSTB_CHARTS__*/"
 TASK_FIELDS = ("id", "category", "subcategory", "difficulty", "evaluation_type", "weight_class", "version", "tags",
                "system_prompt", "messages", "prompt", "choices")
 
@@ -109,6 +110,11 @@ def board(root: Path, *, results_repo: str | None = None, token: str | None = No
                 notes.append(f"submissions merged into datasets/{results_repo}: {listed}")
         for p in sorted((root / "examples" / "results").glob("*.json*")):
             _add(store, p, "baseline")
+        from .publish import HISTORY_SEEDS
+
+        for hist in HISTORY_SEEDS.values():           # older versions' baselines, as they were scored
+            for p in sorted((root / hist).glob("*.json*")):
+                _add(store, p, "baseline")
         doc = build_api(store)
     del doc["generated_at"]  # keep the output a function of its inputs
     for e in doc["entries"]:
@@ -125,12 +131,19 @@ def stage_static_space(repo_root: str | Path, dest: str | Path, *, results_repo:
     tasks = [task_record(t) for t in bench.tasks if t.visibility == "public" and t.active]
     data = {
         "benchmark": BENCHMARK_NAME, "benchmark_version": BENCHMARK_VERSION, "dataset_version": DATASET_VERSION,
-        "runner_version": RUNNER_VERSION, "source": doc["source"], "notes": notes,
+        "scoring_version": SCORING_VERSION, "runner_version": RUNNER_VERSION, "source": doc["source"], "notes": notes,
         "categories": doc["categories"], "metrics": doc["metrics"], "entries": doc["entries"], "tasks": tasks,
+        # the payload is key-sorted, so display order travels separately
+        "category_order": list(doc["categories"]), "metric_order": list(doc["metrics"]),
     }
     template = (root / "hf" / "static" / "index.html").read_text(encoding="utf-8")
-    if template.count(PLACEHOLDER) != 1:
-        raise ValueError(f"hf/static/index.html must contain {PLACEHOLDER} exactly once")
+    for marker in (PLACEHOLDER, CHARTS_PLACEHOLDER):
+        if template.count(marker) != 1:
+            raise ValueError(f"hf/static/index.html must contain {marker} exactly once")
+    charts_js = (root / "hf" / "static" / "charts.js").read_text(encoding="utf-8")
+    if "</script" in charts_js.lower():
+        raise ValueError("hf/static/charts.js must not contain </script")
+    template = template.replace(CHARTS_PLACEHOLDER, charts_js)
     # Inside <script>, "<" could end the element early; JSON escapes keep the value identical.
     payload = json.dumps(data, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
     payload = payload.replace("<", "\\u003c").replace(">", "\\u003e").replace("&", "\\u0026")
