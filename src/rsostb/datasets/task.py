@@ -26,7 +26,8 @@ DEFAULTABLE = frozenset({
     "category", "subcategory", "version", "difficulty", "weight_class", "expected_output_type",
     "evaluation_type", "evaluation", "answer_format", "max_score", "min_score", "tags", "requires_tools",
     "requires_code_execution", "requires_judge", "language", "visibility", "status", "published",
-    "introduced_in", "system_prompt", "context_ref", "expected_behavior", "metadata", "rubric",
+    "introduced_in", "system_prompt", "context_ref", "expected_behavior", "metadata", "rubric", "difficulty_level",
+    "environment",
 })
 
 EVALUATION_FAMILIES = {
@@ -43,6 +44,7 @@ EVALUATION_FAMILIES = {
     "behavior": "behavior",
     "rubric": "judge",
     "hybrid": "hybrid",
+    "research": "research",
 }
 
 _PLACEHOLDER = re.compile(r"\{\{\s*([a-zA-Z_][a-zA-Z0-9_]*)\s*\}\}")
@@ -137,7 +139,7 @@ class Task:
         ev = self.evaluation
         return self.evaluation_type == "agentic" or (
             self.evaluation_type == "tool_call" and ev.get("mode") == "interactive"
-        )
+        ) or (self.evaluation_type == "research" and (self.data.get("environment") or {}).get("kind") == "research")
 
     @property
     def requires_judge(self) -> bool:

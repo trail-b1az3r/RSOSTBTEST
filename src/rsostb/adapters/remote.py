@@ -42,9 +42,17 @@ class OpenAICompatibleAdapter(ModelAdapter):
         self.timeout, self.retries = timeout, retries
         self.extra_body = extra_body or {}
         self.requires_network = not is_local_url(self.base_url)
+        # reasoning_effort is OpenAI's parameter; other servers ignore or reject it,
+        # so it is only sent when the preset is openai or effort_param says so.
+        self.effort_param = options.get("effort_param") or ("reasoning_effort" if preset == "openai" else None)
+        if self.effort_param:
+            self.effort_levels = ("minimal", "low", "medium", "high")
+            self.effort_mechanism = self.effort_param
 
     def chat(self, messages, **kwargs):
         body: dict[str, Any] = {"model": self.model, "messages": messages, **sampling(kwargs), **self.extra_body}
+        if self.effort_param and kwargs.get("effort") in self.effort_levels:
+            body[self.effort_param] = kwargs["effort"]
         headers = {}
         key = env_secret(self.api_key_env)
         if key:
@@ -77,6 +85,10 @@ class AnthropicAdapter(ModelAdapter):
 
     name = "anthropic"
     requires_network = True
+    #: Extended thinking budget (tokens) per effort level; "none" turns thinking off.
+    THINKING_BUDGET = {"none": 0, "low": 1024, "medium": 4096, "high": 16000, "max": 32000}
+    effort_levels = tuple(THINKING_BUDGET)
+    effort_mechanism = "thinking_budget"
 
     def __init__(self, model: str | None = None, *, base_url: str | None = None, api_key_env: str = "ANTHROPIC_API_KEY",
                  timeout: float = 180.0, retries: int = 2, **options: Any) -> None:
@@ -92,7 +104,12 @@ class AnthropicAdapter(ModelAdapter):
         body: dict[str, Any] = {"model": self.model, "messages": msgs, "max_tokens": s.get("max_tokens", 2048)}
         if system:
             body["system"] = system
-        if "temperature" in s:
+        budget = self.THINKING_BUDGET.get(kwargs.get("effort") or "", 0)
+        if budget:
+            # Thinking needs room on top of the answer and the default temperature.
+            body["thinking"] = {"type": "enabled", "budget_tokens": budget}
+            body["max_tokens"] = body["max_tokens"] + budget
+        elif "temperature" in s:
             body["temperature"] = s["temperature"]
         if "stop" in s:
             body["stop_sequences"] = s["stop"]

@@ -20,14 +20,26 @@ forces a kind.
 
 Both have the same tabs:
 
-* **Leaderboard** — filter by benchmark version, entry kind (models,
-  baselines, synthetic), full runs only; free-text search; optional columns
-  for all 36 categories; a bar chart of the top entries.
-* **Model details** — score, versions, coverage, judge, hardware, rates
-  (hallucination, over/under-refusal, tool-call accuracy, coding pass rate),
-  per-category and per-difficulty charts, metric and evaluation-family tables.
-* **Compare runs** — 2–4 entries side by side per category, with a warning when
-  their `compat_key`s differ.
+* **Leaderboard** — choose a **scoring version** (defaults to the benchmark's
+  pinned one) and a benchmark version, filter by entry kind (models, baselines,
+  synthetic) and full runs; free-text search; optional columns for all 42
+  categories. Ranks are counted within each scoring version. When several
+  scoring methods are shown, a note says their scores are not comparable. The
+  table downloads as CSV or JSON.
+* **Model details** — score, versions, coverage, judge, effort, hardware
+  class, efficiency (raw measurements and the normalised E), the terms of a v2
+  score (base, bonus, efficiency, penalties), rates (hallucination,
+  over/under-refusal, tool-call accuracy, coding pass rate), per-category and
+  per-difficulty charts, metric and evaluation-family tables. A v1 entry says
+  it is shown as recorded.
+* **Compare runs** — 2–8 entries side by side per category. Entries scored
+  another way are labelled with their methodology and a note says they are not
+  comparable.
+* **Graphs** — two modes: *one model vs all* (the chosen entry against
+  everyone scored the same way, with their median and best) and *selected
+  models* (up to 8 side by side). Charts: bar, column, dot, radar, multi-line
+  and scatter (choose the axes). Every graph downloads as PNG, SVG, CSV or
+  JSON; the graph's numbers are exactly the data behind the picture.
 * **Submit** — static: how to validate and submit with `rsostb submit`.
   Gradio: upload `.json` / `.jsonl` (optionally `.gz`, ≤ 32 MB); the file is
   validated exactly like `rsostb validate --rescore` and listed only if it is
@@ -41,11 +53,16 @@ Both have the same tabs:
 
 `rsostb space stage` builds three files: `index.html` (the page, with the data
 embedded), `leaderboard.json` (the same entries, for programs) and the Space
-`README.md`. The entries are:
+`README.md`. The graphs are drawn by `hf/static/charts.js`, which
+`tests/test_static_charts.py` checks against the Python graph code
+(`src/rsostb/leaderboard/views.py`) on every test run, so the page and the
+Gradio app show the same numbers. The entries are:
 
 * every full results file merged into the results dataset
   (`$RSOSTB_RESULTS_REPO`, default `ray0rf1re/RSOSTBTEST-pro-results`), and
-* the bundled baseline runs in `examples/results/`,
+* the bundled baseline runs in `examples/results/` (benchmark 1.2, scoring
+  v2) and the earlier benchmark's baselines in `tests/regression/v1/benchmark-1.1/`
+  (scoring v1), shown as history,
 
 each one re-validated and re-scored at build time (a stored entry is never
 taken on trust; reference runs and duplicates are dropped). If the results

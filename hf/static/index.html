@@ -78,6 +78,13 @@ code { font-family: var(--mono); font-size: 0.9em; }
 .picklist label { display: flex; gap: 8px; align-items: baseline; }
 .muted { color: var(--muted); }
 footer { color: var(--muted); font-size: 0.85rem; padding-bottom: 32px; }
+.btn { font: inherit; font-size: 0.85rem; color: var(--ink); background: var(--panel); border: 1px solid var(--line); border-radius: 6px; padding: 4px 10px; cursor: pointer; }
+.btn:hover { border-color: var(--accent); }
+.btn:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.btnrow { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; margin: 8px 0; }
+.chart-box { overflow-x: auto; background: #fcfcfb; border: 1px solid var(--line); border-radius: 10px; padding: 4px; }
+.chart-box svg { display: block; max-width: none; }
+.radios { display: inline-flex; gap: 12px; }
 @media (max-width: 560px) {
   h1 { font-size: 1.3rem; }
   .bars { grid-template-columns: minmax(70px, 120px) 1fr auto; }
@@ -94,6 +101,7 @@ footer { color: var(--muted); font-size: 0.85rem; padding-bottom: 32px; }
     <button role="tab" data-tab="leaderboard">🏆 Leaderboard</button>
     <button role="tab" data-tab="details">🔎 Model details</button>
     <button role="tab" data-tab="compare">⚖️ Compare runs</button>
+    <button role="tab" data-tab="graphs">📈 Graphs</button>
     <button role="tab" data-tab="submit">📤 Submit</button>
     <button role="tab" data-tab="tasks">📚 Tasks</button>
     <button role="tab" data-tab="about">ℹ️ About</button>
@@ -103,13 +111,17 @@ footer { color: var(--muted); font-size: 0.85rem; padding-bottom: 32px; }
 <main>
   <section id="tab-leaderboard" role="tabpanel">
     <div class="controls">
+      <label>Scoring version <select id="lb-scoring"></select></label>
       <label>Benchmark version <select id="lb-version"></select></label>
       <span id="lb-kinds"></span>
       <label><input type="checkbox" id="lb-full"> Full runs only</label>
       <label><input type="checkbox" id="lb-cats"> Show all categories</label>
       <input type="search" id="lb-search" placeholder="Search model / provider" aria-label="Search model or provider">
     </div>
+    <div id="lb-note"></div>
     <div class="scroll" id="lb-table"></div>
+    <div class="btnrow"><span class="muted">Download the table:</span>
+      <button class="btn" id="lb-csv">CSV</button><button class="btn" id="lb-json">JSON</button></div>
     <h3>Top entries <span class="muted">(RSOSTB Score, range −500 to 150,000)</span></h3>
     <div class="panel"><div class="bars" id="lb-chart"></div></div>
   </section>
@@ -120,9 +132,32 @@ footer { color: var(--muted); font-size: 0.85rem; padding-bottom: 32px; }
   </section>
 
   <section id="tab-compare" role="tabpanel" hidden>
-    <p class="muted">Pick 2–4 entries.</p>
+    <p class="muted">Pick 2–8 entries.</p>
     <div class="panel picklist" id="cmp-pick"></div>
     <div id="cmp-body"></div>
+  </section>
+
+  <section id="tab-graphs" role="tabpanel" hidden>
+    <div class="controls">
+      <span class="radios" role="radiogroup" aria-label="Mode">
+        <label><input type="radio" name="g-mode" value="one_vs_all" checked> One model vs all</label>
+        <label><input type="radio" name="g-mode" value="selected"> Selected models</label>
+      </span>
+      <label>Chart <select id="g-chart"></select></label>
+      <label>Dimensions <select id="g-dim"></select></label>
+      <label id="g-focus-wrap">Model <select id="g-focus"></select></label>
+      <label class="g-xy">Scatter x <select id="g-x"></select></label>
+      <label class="g-xy">Scatter y <select id="g-y"></select></label>
+    </div>
+    <div class="panel picklist" id="g-pick" hidden></div>
+    <div id="g-note"></div>
+    <div class="chart-box" id="g-chart-box"></div>
+    <div class="btnrow"><span class="muted">Download this graph:</span>
+      <button class="btn" data-export="png">PNG</button><button class="btn" data-export="svg">SVG</button>
+      <button class="btn" data-export="csv">CSV</button><button class="btn" data-export="json">JSON</button></div>
+    <p class="muted">"One model vs all" compares an entry with everyone scored the same way (their median and best);
+      entries scored another way are left out. "Selected models" shows the chosen entries side by side and says so
+      when their methodologies differ. Hover a mark for its value.</p>
   </section>
 
   <section id="tab-submit" role="tabpanel" hidden>
@@ -148,6 +183,9 @@ footer { color: var(--muted); font-size: 0.85rem; padding-bottom: 32px; }
 
 <script id="rsostb-data" type="application/json">__RSOSTB_DATA__</script>
 <script>
+/*__RSOSTB_CHARTS__*/
+</script>
+<script>
 "use strict";
 const D = JSON.parse(document.getElementById("rsostb-data").textContent);
 const CATS = D.categories;
@@ -161,6 +199,9 @@ const RATES = [["Completion", "completion_rate"], ["Invalid output", "invalid_ou
 const REPO = "https://github.com/trail-b1az3r/RSOSTBTEST";
 const RESULTS_REPO = (D.source && D.source.results_repo) || "ray0rf1re/RSOSTBTEST-pro-results";
 const byId = Object.fromEntries(D.entries.map(e => [e.submission_id, e]));
+const C = window.RSOSTBCharts;
+const NAMES = { ...D.categories, ...D.metrics };
+const ORDER = { categories: D.category_order || Object.keys(CATS), metrics: D.metric_order || Object.keys(D.metrics) };
 const taskById = Object.fromEntries(D.tasks.map(t => [t.id, t]));
 
 // ---------------------------------------------------------------- helpers (text only, never innerHTML)
@@ -181,7 +222,7 @@ const fill = (node, ...kids) => { node.replaceChildren(); for (const k of kids.f
 const num = (v, d = 2) => (v === null || v === undefined || Number.isNaN(v)) ? "—"
   : Number(v).toLocaleString("en-US", { minimumFractionDigits: d, maximumFractionDigits: d });
 const pct = v => (v === null || v === undefined) ? "—" : `${(100 * v).toFixed(1)}%`;
-const label = e => `${e.model.name} · ${num(e.scores.rsostb_score, 0)} · ${e.submission_id.slice(0, 8)}`;
+const label = e => `${e.model.name} · ${num(e.scores.rsostb_score, 0)} · scoring ${e.scoring_version} · ${e.submission_id.slice(0, 8)}`;
 const entryLink = e => el("button", { class: "link", on: { click: () => go("details", e.submission_id) } }, e.model.name);
 const code = t => el("code", {}, t);
 
@@ -190,6 +231,13 @@ function table(cols, rows, empty) {
   return el("table", {},
     el("thead", {}, el("tr", {}, cols.map(c => el("th", { class: c.num ? "num" : null }, c.name)))),
     el("tbody", {}, rows.map(r => el("tr", {}, cols.map(c => el("td", { class: c.num ? "num" : (c.wrap ? "wrap" : null) }, c.get(r)))))));
+}
+
+function download(name, data, type) {
+  const blob = data instanceof Blob ? data : new Blob([data], { type });
+  const a = el("a", { href: URL.createObjectURL(blob), download: name });
+  document.body.append(a); a.click(); a.remove();
+  setTimeout(() => URL.revokeObjectURL(a.href), 1000);
 }
 
 // Bars for values in [lo, hi]; with lo < 0 the axis sits at zero.
@@ -219,38 +267,79 @@ function bars(items, { lo = 0, hi = null, fmt = v => num(v, 1), kindOf = null } 
 
 // ---------------------------------------------------------------- leaderboard
 function initLeaderboard() {
-  const versions = [...new Set([D.benchmark_version, ...D.entries.map(e => e.benchmark_version)])].sort();
-  fill($("lb-version"), versions.map(v => el("option", { value: v, selected: v === D.benchmark_version }, v)));
+  const scorings = C.scoringVersions(D.entries);
+  const def = scorings.includes(D.scoring_version) ? D.scoring_version : (scorings[scorings.length - 1] || "all");
+  fill($("lb-scoring"), ["all", ...scorings].map(v => el("option", { value: v, selected: v === def }, v)));
+  fill($("lb-version"), ["all", ...C.benchmarkVersions(D.entries)].map(v => el("option", { value: v, selected: v === "all" }, v)));
   fill($("lb-kinds"), Object.entries(KINDS).map(([k, name]) =>
     el("label", {}, el("input", { type: "checkbox", value: k, checked: true, "data-kind": "" }), name)));
-  for (const id of ["lb-version", "lb-full", "lb-cats", "lb-search"]) $(id).addEventListener("input", renderLeaderboard);
+  for (const id of ["lb-scoring", "lb-version", "lb-full", "lb-cats", "lb-search"]) $(id).addEventListener("input", renderLeaderboard);
   $("lb-kinds").addEventListener("change", renderLeaderboard);
+  $("lb-csv").addEventListener("click", () => download("rsostb-leaderboard.csv", tableCSV(boardRows()), "text/csv"));
+  $("lb-json").addEventListener("click", () => download("rsostb-leaderboard.json",
+    JSON.stringify({ format: "rsostb-leaderboard-table", format_version: "1.0", rows: tableRows(boardRows()) }, null, 2) + "\n", "application/json"));
   renderLeaderboard();
 }
 
+// Ranked by score within each scoring version: scores from different versions are different scales.
 function boardRows() {
-  const version = $("lb-version").value;
+  const scoring = $("lb-scoring").value, version = $("lb-version").value;
   const kinds = new Set([...document.querySelectorAll("[data-kind]")].filter(c => c.checked).map(c => c.value));
   const full = $("lb-full").checked;
   const q = $("lb-search").value.trim().toLowerCase();
-  return D.entries
-    .filter(e => e.benchmark_version === version && kinds.has(e.model.kind || "model") && (!full || e.full_run))
+  const rows = D.entries
+    .filter(e => (scoring === "all" || e.scoring_version === scoring) && (version === "all" || e.benchmark_version === version))
+    .filter(e => kinds.has(e.model.kind || "model") && (!full || e.full_run))
     .filter(e => !q || (e.model.name || "").toLowerCase().includes(q) || (e.model.provider || "").toLowerCase().includes(q))
-    .sort((a, b) => b.scores.rsostb_score - a.scores.rsostb_score);
+    .sort((a, b) => C.cmpKey(a.scoring_version, b.scoring_version) || b.scores.rsostb_score - a.scores.rsostb_score);
+  const rank = {};
+  for (const r of rows) r._rank = rank[r.scoring_version] = (rank[r.scoring_version] || 0) + 1;
+  return rows;
+}
+
+function tableRows(rows) {
+  return rows.map(e => ({ rank: e._rank, model: e.model.name, kind: e.model.kind || "model", provider: e.model.provider || null,
+    rsostb_score: e.scores.rsostb_score, scoring_version: e.scoring_version, benchmark_version: e.benchmark_version,
+    effort: (e.effort || {}).level || null, hardware_class: e.hardware_class || null,
+    efficiency: (e.efficiency || {}).normalized ?? null, tokens_per_second: (e.efficiency || {}).output_tokens_per_second ?? null,
+    gpu_score: (e.gpu || {}).gpu_score ?? null, tasks: e.n_tasks, full_run: !!e.full_run, coverage: e.coverage,
+    judge: e.judge || "none", validation: e.validation_status, date: (e.timestamp || "").slice(0, 10), submission_id: e.submission_id,
+    ...Object.fromEntries(Object.entries(e.scores.metrics || {}).filter(([k]) => k !== "rsostb_score").map(([k, v]) => [`metric:${k}`, v])),
+    ...Object.fromEntries(Object.entries(e.scores.categories || {}).map(([k, v]) => [`cat:${k}`, v])) }));
+}
+
+function tableCSV(rows) {
+  const data = tableRows(rows);
+  const base = ["rank", "model", "kind", "provider", "rsostb_score", "scoring_version", "benchmark_version", "effort", "hardware_class",
+    "efficiency", "tokens_per_second", "gpu_score", "tasks", "full_run", "coverage", "judge", "validation", "date", "submission_id"];
+  const extra = [...new Set(data.flatMap(Object.keys))].filter(k => !base.includes(k)).sort();
+  const cols = [...base, ...extra];
+  const cell = v => { if (v === null || v === undefined) return ""; const s = String(v); return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s; };
+  const head = cols.map(c => (c.includes(":") ? `${NAMES[c.split(":")[1]] || c.split(":")[1]} (%)` : c));
+  return [head, ...data.map(r => cols.map(c => r[c]))].map(r => r.map(cell).join(",")).join("\n") + "\n";
 }
 
 function renderLeaderboard() {
   const rows = boardRows();
+  const m = C.methodology(rows);
+  fill($("lb-note"), m.scoring_versions.length > 1
+    ? el("p", { class: "note warn" }, "⚠️ Several scoring methods are shown. Ranks are counted within each scoring version; scores from different versions are on different scales and are not comparable.")
+    : (m.notes.length ? el("p", { class: "note warn" }, "⚠️ " + m.notes.join(" ")) : null));
   const cols = [
-    { name: "Rank", num: true, get: r => rows.indexOf(r) + 1 },
+    { name: "Rank", num: true, get: r => r._rank },
     { name: "Model", get: entryLink },
     { name: "Kind", get: r => r.model.kind || "model" },
     { name: "RSOSTB Score", num: true, get: r => el("strong", {}, num(r.scores.rsostb_score)) },
+    { name: "Scoring", get: r => el("span", { class: "tag" }, r.scoring_version) },
+    { name: "Benchmark", get: r => r.benchmark_version },
+    { name: "Effort", get: r => (r.effort || {}).level || "—" },
+    { name: "Hardware", get: r => r.hardware_class || "—" },
+    { name: "Efficiency E", num: true, get: r => ((r.efficiency || {}).normalized ?? null) === null ? "—" : num(r.efficiency.normalized, 3) },
     { name: "GPU score", num: true, get: r => num((r.gpu || {}).gpu_score) },
     ...Object.entries(METRICS).map(([id, name]) => ({ name, num: true, get: r => num((r.scores.metrics || {})[id]) })),
   ];
   if ($("lb-cats").checked) {
-    for (const [id, name] of Object.entries(CATS)) cols.push({ name, num: true, get: r => num((r.scores.categories || {})[id], 1) });
+    for (const id of ORDER.categories) cols.push({ name: CATS[id], num: true, get: r => num((r.scores.categories || {})[id], 1) });
   }
   cols.push(
     { name: "Tasks", num: true, get: r => r.n_tasks },
@@ -262,7 +351,7 @@ function renderLeaderboard() {
     { name: "Submission", get: r => code(r.submission_id.slice(0, 12)) },
   );
   fill($("lb-table"), table(cols, rows, "No entries match these filters yet."));
-  fill($("lb-chart"), rows.length ? bars(rows.slice(0, 15).map(r => ({ label: r.model.name, value: r.scores.rsostb_score, kind: r.model.kind || "model" })),
+  fill($("lb-chart"), rows.length ? bars(rows.slice(0, 15).map(r => ({ label: `${r.model.name} · ${r.scoring_version}`, value: r.scores.rsostb_score, kind: r.model.kind || "model" })),
     { fmt: v => num(v, 0), kindOf: it => it.kind }) : [el("div", { class: "empty" }, "Nothing to chart.")]);
 }
 
@@ -289,6 +378,13 @@ function renderDetails(sid) {
       ["Tasks", `${e.n_tasks} (${e.full_run ? "full run" : "partial run"}) · coverage ${num(e.coverage, 3)}`],
       ["GPU score", e.gpu ? `${num(e.gpu.gpu_score)} / 100 (×${num(e.gpu.multiplier)}; ${e.gpu.basis})` : "—"],
       ["Price", e.model.pricing ? `${e.model.pricing.input_per_mtok ?? "—"} in / ${e.model.pricing.output_per_mtok ?? "—"} out per 1M tokens (${e.model.pricing.currency || "USD"})` : "—"],
+      ["Effort", e.effort ? `${e.effort.level} (requested ${e.effort.requested || "—"}; ${e.effort.applied ? "applied via " + e.effort.mechanism : "not applied"}; multiplier 1.0 at every level)` : "—"],
+      ["Hardware class", e.hardware_class ? `${e.hardware_class} (${e.hardware_class_source || "—"})` : "—"],
+      ["Efficiency E", e.efficiency ? `${e.efficiency.normalized === null ? "unknown" : num(e.efficiency.normalized, 3)} · ${e.efficiency.tasks_measured || 0} tasks measured, `
+        + `${e.efficiency.output_tokens_per_second ?? "—"} output tokens/s, ${e.efficiency.output_tokens_per_task ?? "—"} tokens/task`
+        + (e.efficiency.note ? ` · ${e.efficiency.note}` : "") : "—"],
+      ["Score built from", e.breakdown ? `base ${num(e.breakdown.base)} + bonus ${num(e.breakdown.bonus)} + efficiency ${num(e.breakdown.efficiency)} − penalties ${num(e.breakdown.penalties)} = ${num(e.breakdown.final)}${e.breakdown.clamped ? " (clamped)" : ""}`
+        : (e.scoring_version === "v1" ? "scoring v1 (history): shown exactly as recorded, never re-scored" : "—")],
       ["Judge", e.judge || "none"], ["Validation", e.validation_status],
       ["Run date", (e.timestamp || "—").slice(0, 19)], ["Hardware", (e.hardware || []).join("; ") || "—"],
       ["Submission id", code(e.submission_id)],
@@ -297,12 +393,12 @@ function renderDetails(sid) {
   );
   const rates = el("div", { class: "panel" }, el("h3", { style: "margin-top:0" }, "Statistics"),
     table([{ name: "Statistic", get: r => r[0] }, { name: "Value", num: true, get: r => pct(st[r[1]]) }], RATES, ""));
-  const cats = Object.entries(s.categories || {});
+  const cats = ORDER.categories.filter(c => c in (s.categories || {})).map(c => [c, s.categories[c]]);
   const catPanel = el("div", { class: "panel" }, el("h3", { style: "margin-top:0" }, "Per-category score (%)"),
     el("div", { class: "bars" }, bars(cats.map(([c, v]) => ({ label: CATS[c] || c, value: v })), { lo: -100, hi: 100 })));
   const diff = s.difficulty || {};
   const diffPanel = el("div", { class: "panel" }, el("h3", { style: "margin-top:0" }, "Score by difficulty (%)"),
-    el("div", { class: "bars" }, bars(DIFFS.filter(d => d in diff).map(d => ({ label: d, value: diff[d] })), { lo: -100, hi: 100 })));
+    el("div", { class: "bars" }, bars(C.DIFFICULTY_ORDER.filter(d => d in diff).map(d => ({ label: C.LEVEL_NAMES[d] || d, value: diff[d] })), { lo: -100, hi: 100 })));
   const groups = [
     ...Object.entries(s.metrics || {}).filter(([k]) => k !== "rsostb_score").map(([k, v]) => ["metric", D.metrics[k] || k, v]),
     ...Object.entries(s.evaluation_families || {}).map(([k, v]) => ["evaluation family", k, v]),
@@ -322,17 +418,17 @@ function initCompare() {
 function renderCompare() {
   const boxes = [...document.querySelectorAll("[data-cmp]")];
   const ids = boxes.filter(b => b.checked).map(b => b.value);
-  for (const b of boxes) b.disabled = !b.checked && ids.length >= 4;
-  if (ids.length < 2) { fill($("cmp-body"), el("p", { class: "muted" }, "Pick 2–4 entries to compare.")); return; }
+  for (const b of boxes) b.disabled = !b.checked && ids.length >= 8;
+  if (ids.length < 2) { fill($("cmp-body"), el("p", { class: "muted" }, "Pick 2–8 entries to compare.")); return; }
   const chosen = ids.map(id => byId[id]);
-  const comparable = new Set(chosen.map(e => e.compat_key)).size <= 1;
-  const note = comparable
+  const m = C.methodology(chosen);
+  const note = m.comparable
     ? el("p", { class: "note ok" }, "✅ These runs are directly comparable.")
-    : el("p", { class: "note warn" }, "⚠️ These runs use different benchmark/scoring versions or judges; their scores are not directly comparable.");
+    : el("p", { class: "note warn" }, "⚠️ " + m.notes.join(" "));
   const rows = [["RSOSTB Score", e => e.scores.rsostb_score, 2],
     ...Object.entries(CATS).map(([id, name]) => [name, e => (e.scores.categories || {})[id], 1])];
   const cols = [{ name: "Category", get: r => r[0] },
-    ...chosen.map(e => ({ name: e.model.name, num: true, get: r => {
+    ...chosen.map(e => ({ name: C.entryName(e, !m.comparable), num: true, get: r => {
       const vals = chosen.map(r[1]).filter(v => typeof v === "number");
       const v = r[1](e);
       const best = typeof v === "number" && vals.length > 1 && v === Math.max(...vals);
@@ -340,6 +436,64 @@ function renderCompare() {
     } }))];
   fill($("cmp-body"), note, el("div", { class: "scroll" }, table(cols, rows, "")),
     el("p", { class: "muted" }, "Category scores are percentages (−100 to 100); the best value in each row is bold."));
+}
+
+// ---------------------------------------------------------------- graphs
+const MEASURES = [...Object.entries(C.SCATTER_MEASURES),
+  ...(ORDER.metrics || []).filter(k => k !== "rsostb_score").map(k => [`metric:${k}`, `${D.metrics[k]} (%)`])];
+
+function initGraphs() {
+  fill($("g-chart"), C.CHART_TYPES.map(c => el("option", { value: c }, c === "line" ? "line (multi-line)" : c)));
+  fill($("g-dim"), Object.entries(C.DIMENSIONS).map(([k, v]) => el("option", { value: k }, v)));
+  fill($("g-focus"), D.entries.map(e => el("option", { value: e.submission_id }, label(e))));
+  fill($("g-x"), MEASURES.map(([k, v]) => el("option", { value: k, selected: k === "metric:reasoning" }, v)));
+  fill($("g-y"), MEASURES.map(([k, v]) => el("option", { value: k, selected: k === "rsostb_score" }, v)));
+  fill($("g-pick"), D.entries.map((e, i) => el("label", {}, el("input", { type: "checkbox", value: e.submission_id, "data-g": "", checked: i < 3 }), label(e))));
+  for (const id of ["g-chart", "g-dim", "g-focus", "g-x", "g-y"]) $(id).addEventListener("input", renderGraph);
+  $("g-pick").addEventListener("change", renderGraph);
+  for (const r of document.querySelectorAll('input[name="g-mode"]')) r.addEventListener("change", renderGraph);
+  for (const b of document.querySelectorAll("[data-export]")) b.addEventListener("click", () => exportGraph(b.dataset.export));
+}
+
+function currentGraph() {
+  const mode = document.querySelector('input[name="g-mode"]:checked').value;
+  const boxes = [...document.querySelectorAll("[data-g]")];
+  const selected = boxes.filter(b => b.checked).map(b => b.value);
+  for (const b of boxes) b.disabled = !b.checked && selected.length >= C.MAX_SERIES;
+  return C.graph(D.entries, { mode, chart: $("g-chart").value, dimension: $("g-dim").value, focus: $("g-focus").value,
+    selected, names: NAMES, order: ORDER, x: $("g-x").value, y: $("g-y").value });
+}
+
+function renderGraph() {
+  const g = currentGraph();
+  const one = g.mode === "one_vs_all";
+  $("g-pick").hidden = one;
+  $("g-focus-wrap").hidden = !one;
+  for (const n of document.querySelectorAll(".g-xy")) n.hidden = g.chart !== "scatter";
+  $("g-dim").disabled = g.chart === "scatter";
+  fill($("g-note"), g.comparable ? null : el("p", { class: "note warn" }, "⚠️ These entries use different methodologies; see the notes in the chart."));
+  // Our own SVG text (every value escaped by charts.js), parsed as SVG, never as HTML.
+  const svg = new DOMParser().parseFromString(C.toSVG(g), "image/svg+xml").documentElement;
+  fill($("g-chart-box"), document.importNode(svg, true));
+}
+
+function exportGraph(fmt) {
+  const g = currentGraph();
+  const name = `rsostb-graph-${g.chart}`;
+  if (fmt === "csv") return download(`${name}.csv`, C.graphCSV(g), "text/csv");
+  if (fmt === "json") return download(`${name}.json`, C.graphJSON(g), "application/json");
+  const svg = C.toSVG(g);
+  if (fmt === "svg") return download(`${name}.svg`, svg, "image/svg+xml");
+  const img = new Image();
+  img.onload = () => {
+    const scale = 2, canvas = document.createElement("canvas");
+    canvas.width = img.width * scale; canvas.height = img.height * scale;
+    const ctx = canvas.getContext("2d");
+    ctx.scale(scale, scale);
+    ctx.drawImage(img, 0, 0);
+    canvas.toBlob(b => download(`${name}.png`, b, "image/png"), "image/png");
+  };
+  img.src = "data:image/svg+xml;charset=utf-8," + encodeURIComponent(svg);
 }
 
 // ---------------------------------------------------------------- tasks
@@ -403,16 +557,21 @@ function renderStatic() {
   fill($("about-body"),
     el("h2", {}, "RSOSTBTEST-pro — Rayofire's Basic Orbital Strike Cannon Test (large)"),
     el("p", {}, `A large open benchmark for AI systems: ${D.tasks.length} public tasks in ${nCats} categories, from maths and physics to C++, `,
-      "RISC-V assembly, Godot, agentic repo repair, tool calling, safety calibration, multilingual understanding and creative writing."),
-    el("p", {}, el("strong", {}, "Scoring. "), "Each task earns ", code("raw_task_score × task_weight × difficulty_multiplier × category_weight × evaluation_quality"),
-      ", with penalties (hallucination, unsafe output, over-refusal, invalid output, adversarial traps) and small bonuses. Totals are normalised and ",
-      "published on a −500 to +150,000 scale. Every result pins the benchmark, dataset and scoring versions and a hash of the scoring config, so ",
-      "changing a weight produces a new, non-comparable score version."),
+      "RISC-V assembly, Godot, agentic repo repair, tool calling, safety calibration, multilingual understanding, creative writing and web research over an offline web."),
+    el("p", {}, el("strong", {}, "Scoring. "), `Benchmark ${D.benchmark_version} uses scoring ${D.scoring_version}: `,
+      code("raw (0–100) × task weight × difficulty level (1–6) × category × eval quality × reliability × effort"),
+      " (effort is neutral), plus capped bonuses and a small bounded efficiency term, minus capped penalties, on a −500 to +150,000 scale. ",
+      "Every result pins the benchmark, dataset and scoring versions and a hash of the scoring config."),
+    el("p", {}, el("strong", {}, "History. "), "Older results keep the scoring they were made with (benchmark 1.0 and 1.1: scoring v1) and are shown as ",
+      "recorded, never re-scored. The scoring-version menu lists the versions present; ranks and comparisons only mean something within one scoring version."),
+    el("p", {}, el("strong", {}, "Graphs. "), "One model against everyone scored the same way, or selected models side by side, as bar, column, dot, radar, ",
+      "multi-line or scatter charts; every graph downloads as PNG, SVG, CSV or JSON, and the table as CSV or JSON."),
     el("p", {}, el("strong", {}, "GPU score. "), "General public use, 0–100: the normalized RSOSTB Score, multiplied by 0.1–1 when it ",
       "is below 0.6 — the more so the bigger the model and the pricier its API. Size comes from the model name or metadata, price ",
       "from the run's recorded API pricing. It is derived and never changes the RSOSTB Score."),
     el("p", {}, el("strong", {}, "Validation. "), "Every entry is re-scored from its stored responses by the same code as ", code("rsostb validate --rescore"),
-      ". Code-execution tasks are taken as claimed unless re-run offline with ", code("--execute"), " (status verified)."),
+      ". Code-execution tasks are taken as claimed unless re-run offline with ", code("--execute"), " (status verified). Entries for older benchmark ",
+      "versions are recomputed with that version's frozen scoring inputs."),
     el("p", {}, el("strong", {}, "Data. "), "The page is built from the GitHub repository; the same entries are in ",
       el("a", { href: "leaderboard.json" }, "leaderboard.json"), ". Source, documentation and the CLI: ", el("a", { href: REPO }, REPO), "."),
     (D.notes || []).length ? el("ul", {}, D.notes.map(n => el("li", { class: "muted" }, n))) : null);
@@ -421,7 +580,7 @@ function renderStatic() {
 }
 
 // ---------------------------------------------------------------- tabs (#tab or #tab/id)
-const TABS = ["leaderboard", "details", "compare", "submit", "tasks", "about"];
+const TABS = ["leaderboard", "details", "compare", "graphs", "submit", "tasks", "about"];
 function go(tab, id) { location.hash = id ? `${tab}/${encodeURIComponent(id)}` : tab; }
 function route() {
   const [raw, rawId] = location.hash.replace(/^#/, "").split("/");
@@ -430,6 +589,7 @@ function route() {
   for (const b of document.querySelectorAll("nav button")) b.setAttribute("aria-selected", String(b.dataset.tab === tab));
   for (const t of TABS) $(`tab-${t}`).hidden = t !== tab;
   if (tab === "details") renderDetails(id);
+  if (tab === "graphs") renderGraph();
   if (tab === "tasks") { renderTask(id); if (id) $("tk-view").scrollIntoView({ block: "start" }); }
 }
 for (const b of document.querySelectorAll("nav button")) b.addEventListener("click", () => go(b.dataset.tab));
@@ -439,6 +599,7 @@ renderStatic();
 initLeaderboard();
 initDetails();
 initCompare();
+initGraphs();
 initTasks();
 route();
 </script>

@@ -51,10 +51,12 @@ def _counts(rows):
 
 
 def score_run(task_results: list[dict[str, Any]], tasks: dict[str, Any], bench: BenchmarkConfig,
-              scoring: ScoringConfig, *, normalizer=None) -> tuple[list[dict[str, Any]], dict[str, Any]]:
+              scoring: ScoringConfig, *, normalizer=None, run=None) -> tuple[list[dict[str, Any]], dict[str, Any]]:
     """Recompute every task result and the run summary.
 
     ``tasks`` maps task id -> Task. Returns (scored task results, scores).
+    ``run`` (the results file's run block) is accepted for a common signature
+    and not read: nothing about the run changes a v1 score.
     """
     scored = [score_task_result(tasks[tr["task_id"]], tr, bench, scoring) for tr in task_results]
     rows = [(tr, tasks[tr["task_id"]]) for tr in scored]

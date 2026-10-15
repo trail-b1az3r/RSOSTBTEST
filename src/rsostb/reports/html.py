@@ -212,6 +212,7 @@ def render_html(r: dict[str, Any]) -> str:
         '<section class="card"><div class="tiles">'
         + "".join(f'<div class="tile"><div class="k">{e(k)}</div><div class="v">{num(v, 3)}</div></div>' for k, v in tiles)
         + "</div></section>",
+        *_v2_html(r),
         "<h2>Metrics</h2>",
         '<p class="sub">Percent of achievable weighted points on each subset; negative means net penalties.</p>',
         f'<section class="card">{hbar_chart(metric_rows, "Special metrics")}'
@@ -261,3 +262,15 @@ def render_html(r: dict[str, Any]) -> str:
         "</main></body></html>",
     ]
     return "\n".join(out)
+
+
+def _v2_html(r: dict[str, Any]) -> list[str]:
+    from .builder import v2_tables
+
+    out: list[str] = []
+    for t in v2_tables(r):
+        if t.get("heading"):
+            out.append(f"<h2>{e(t['heading'])}</h2>")
+        intro = f'<p class="sub">{e(t["intro"])}</p>' if t.get("intro") else ""
+        out.append(f'<section class="card">{intro}{table(t["headers"], t["rows"])}</section>')
+    return out

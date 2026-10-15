@@ -69,9 +69,29 @@ class ModelAdapter(ABC):
     #: Baselines/reference adapters are excluded from the public leaderboard.
     kind = "model"
 
+    #: Effort / reasoning levels this adapter can actually apply (``chat(effort=...)``),
+    #: and how. Empty: the model runs at its default effort whatever is requested.
+    effort_levels: tuple[str, ...] = ()
+    effort_mechanism: str | None = None
+
     def __init__(self, model: str | None = None, **options: Any) -> None:
         self.model = model or options.pop("model_name", None) or self.name
         self.options = options
+
+    def effort_plan(self, requested: str | None) -> dict[str, Any]:
+        """What a run at ``requested`` effort will really do with this adapter."""
+        levels = list(self.effort_levels)
+        if not requested:
+            return {"requested": None, "applied": False, "level": "default", "supported": levels,
+                    "mechanism": self.effort_mechanism, "note": None}
+        req = str(requested).lower()
+        if req in levels:
+            return {"requested": req, "applied": True, "level": req, "supported": levels,
+                    "mechanism": self.effort_mechanism, "note": None}
+        why = (f"{self.name} cannot set effort" if not levels else
+               f"{self.name} supports {', '.join(levels)}, not {req}")
+        return {"requested": req, "applied": False, "level": "default", "supported": levels,
+                "mechanism": self.effort_mechanism, "note": f"{why}; ran at the model's default effort"}
 
     def generate(self, prompt: str, **kwargs: Any) -> Generation:
         return self.chat([{"role": "user", "content": prompt}], **kwargs)

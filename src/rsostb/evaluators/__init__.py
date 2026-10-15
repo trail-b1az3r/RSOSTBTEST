@@ -9,6 +9,7 @@ from . import (  # noqa: F401  (registration)
     behavior,
     code,
     hybrid,
+    research,
     rubric,
     structural,
     text,

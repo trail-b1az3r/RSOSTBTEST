@@ -129,3 +129,25 @@ class MyAdapter(ModelAdapter):
 Use it without registering: `--adapter my_package.my_module:MyAdapter`, or
 register it with `rsostb.adapters.register_adapter("my-backend", MyAdapter)`.
 `describe()` must never include secrets.
+
+### Effort levels and token usage
+
+An adapter that can set an effort or reasoning level declares it, and reads
+the level from `chat(..., effort=...)`:
+
+```python
+class MyAdapter(ModelAdapter):
+    effort_levels = ("low", "medium", "high")
+    effort_mechanism = "my_backend_reasoning"   # shown in results and reports
+
+    def chat(self, messages, **kwargs):
+        level = kwargs.get("effort")            # only ever one of effort_levels
+        ...
+```
+
+A run with `--effort` on an adapter that cannot set it still runs, at the
+model's default effort, and the result says so (see
+[SCORING-V2.md](SCORING-V2.md#effort-levels)). Return token counts in
+`Generation.usage` (`input_tokens`/`output_tokens`, or OpenAI's
+`prompt_tokens`/`completion_tokens`); without them a run's efficiency is
+recorded as unknown.

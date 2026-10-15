@@ -374,10 +374,15 @@ class RepoEnvironment(ToolEnvironment):
                 "test_runs": list(self.test_runs), "edits": list(self.edits)}
 
 
-def make_environment(task, sandbox: Sandbox | None = None, limits: SandboxLimits | None = None) -> ToolEnvironment:
+def make_environment(task, sandbox: Sandbox | None = None, limits: SandboxLimits | None = None,
+                     research_policy=None) -> ToolEnvironment:
     spec = task.data.get("environment") or {"kind": "mock"}
     kind = spec.get("kind", "mock")
     tools = task.tools
+    if kind == "research":
+        from ..research.environment import ResearchEnvironment
+
+        return ResearchEnvironment(task, research_policy)
     if kind == "mock":
         return MockEnvironment(tools, spec)
     if kind == "kv":

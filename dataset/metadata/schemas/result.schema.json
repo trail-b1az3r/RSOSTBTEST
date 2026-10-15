@@ -32,7 +32,17 @@
         "platform": {"type": "string", "maxLength": 256},
         "python": {"type": "string", "maxLength": 64},
         "sandbox": {"type": "object"},
-        "toolchains": {"type": "object"}
+        "toolchains": {"type": "object"},
+        "hardware_info": {
+          "type": "object",
+          "properties": {
+            "class": {"enum": ["cpu", "apple_silicon", "consumer_gpu", "datacenter_gpu", "remote", "unknown"]},
+            "accelerators": {"type": "array", "maxItems": 32, "items": {"type": "object", "properties": {
+              "vendor": {"type": "string", "maxLength": 32}, "name": {"type": "string", "maxLength": 128},
+              "memory_gb": {"type": ["number", "null"], "minimum": 0}, "count": {"type": "integer", "minimum": 1}}}},
+            "memory_gb": {"type": ["number", "null"], "minimum": 0}
+          }
+        }
       }
     },
     "run": {

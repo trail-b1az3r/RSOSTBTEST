@@ -56,6 +56,10 @@ def build_messages(task, choice_order: list[int] | None = None) -> list[dict[str
             names = (task.data.get("environment") or {}).get("tools") or list(REPO_TOOLS)
             tools = [REPO_TOOLS[n] for n in names if n in REPO_TOOLS] + tools
         system = (system + "\n\n" if system else "") + system_prompt_for(tools)
+    if et == "research" and task.is_episode:
+        from ..research.environment import research_tools
+
+        system = (system + "\n\n" if system else "") + system_prompt_for(research_tools(task) + task.tools)
     if system:
         msgs.append({"role": "system", "content": system})
     for m in task.data.get("messages") or []:
@@ -77,6 +81,10 @@ def build_messages(task, choice_order: list[int] | None = None) -> list[dict[str
         body += CODE_HINT.format(lang=CODE_LANG.get(ev.get("runner"), ""))
     elif et == "tool_call" and ev.get("mode") != "interactive":
         body += SINGLE_TURN_SUFFIX
+    elif et == "research" and not ev.get("no_format_hint"):
+        from ..research.report import PLAN_HINT, REPORT_HINT
+
+        body += PLAN_HINT if ev.get("mode") == "plan" else REPORT_HINT
     msgs.append({"role": "user", "content": body})
     return msgs
 

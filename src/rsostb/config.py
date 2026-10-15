@@ -180,11 +180,35 @@ def load_benchmark_config(root: Path | None = None) -> BenchmarkConfig:
     return _load_benchmark_config_cached(str(root or benchmark_dir()))
 
 
-def load_scoring_config(root: Path | None = None, override: Path | None = None) -> ScoringConfig:
-    path = override or (root or benchmark_dir()) / "configs" / "scoring.yaml"
+def scoring_config_file(root: Path | None = None, version: str | None = None) -> Path:
+    """``configs/scoring-<version>.yaml`` when it exists, else ``configs/scoring.yaml``
+    (the benchmark's pinned scoring, which also serves variants such as v1-balanced)."""
+    configs = (root or benchmark_dir()) / "configs"
+    if version:
+        alt = configs / f"scoring-{version}.yaml"
+        if alt.is_file():
+            return alt
+    return configs / "scoring.yaml"
+
+
+def load_scoring_config(root: Path | None = None, override: Path | None = None,
+                        version: str | None = None) -> ScoringConfig:
+    path = override or scoring_config_file(root, version)
     raw = load_yaml(Path(path))
-    validate_scoring_config(raw)
+    if str(raw.get("scoring_version")) == "v2":
+        from .scoring.v2 import validate_config
+
+        validate_config(raw)
+    else:
+        validate_scoring_config(raw)
     return ScoringConfig(raw=raw)
+
+
+def load_pinned_scoring(root: Path | None = None) -> ScoringConfig:
+    """The scoring a benchmark tree pins: ``scoring_version`` in benchmark.yaml
+    (v1, the default for trees that predate the key, reads scoring.yaml)."""
+    version = load_benchmark_config(root).raw.get("scoring_version")
+    return load_scoring_config(root, version=version)
 
 
 def load_runner_config(root: Path | None = None) -> dict[str, Any]:
@@ -224,5 +248,5 @@ def scoring_fingerprint_payload(bench: BenchmarkConfig, scoring: ScoringConfig) 
 
 def scoring_config_hash(bench: BenchmarkConfig | None = None, scoring: ScoringConfig | None = None) -> str:
     bench = bench or load_benchmark_config()
-    scoring = scoring or load_scoring_config()
+    scoring = scoring or load_pinned_scoring()
     return sha256_obj(scoring_fingerprint_payload(bench, scoring))

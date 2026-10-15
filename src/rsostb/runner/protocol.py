@@ -77,7 +77,8 @@ def parse_turn(text: str) -> tuple[str, Any]:
             return "final", str(data.get("final_answer", ""))
         return "calls", calls
     if isinstance(data, dict) and "final_answer" in data:
-        return "final", str(data["final_answer"])
+        fa = data["final_answer"]
+        return "final", json.dumps(fa, ensure_ascii=False) if isinstance(fa, (dict, list)) else str(fa)
     if isinstance(data, dict) and ("name" in data or "function" in data):
         c = _norm_call(data)
         return ("calls", [c]) if c else ("invalid", "malformed tool call")
