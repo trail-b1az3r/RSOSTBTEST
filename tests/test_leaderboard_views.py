@@ -170,3 +170,20 @@ def test_chart_text_is_escaped():
 def test_charts_module_matches_views():
     assert set(views.CHART_TYPES) == {"bar", "column", "dot", "radar", "line", "scatter"}
     assert Path(charts.__file__).is_file()
+
+
+def test_png_without_pillow_says_how_to_install(monkeypatch, entries, names):
+    import builtins
+
+    real = builtins.__import__
+
+    def no_pil(name, *a, **k):
+        if name == "PIL" or name.startswith("PIL."):
+            raise ImportError("No module named 'PIL'")
+        return real(name, *a, **k)
+
+    monkeypatch.setattr(builtins, "__import__", no_pil)
+    g = views.graph(entries, mode="selected", selected=[entries[0]["submission_id"]], names=names)
+    with pytest.raises(ImportError, match=r"RSOSTB\[graphs\]"):
+        charts.to_png(g)
+    assert charts.to_svg(g).startswith("<svg")          # SVG needs nothing extra

@@ -50,8 +50,10 @@ hf = ["huggingface_hub>=0.24"]
 transformers = ["transformers>=4.40", "torch>=2.1"]
 # HyperNix in-process ovens (the T1 HTTP adapter needs nothing extra).
 hypernix = ["hypernix>=0.72"]
+# Graph PNG export (rsostb.leaderboard.charts.to_png) needs Pillow.
+graphs = ["pillow>=10.0"]
 # The Hugging Face Space UI.
-space = ["gradio>=5.0,<6", "plotly>=5.18", "pandas>=2.0", "huggingface_hub>=0.24", "spaces"]
+space = ["gradio>=5.0,<6", "plotly>=5.18", "pandas>=2.0", "huggingface_hub>=0.24", "spaces", "pillow>=10.0"]
 dev = [
     "pytest>=8",
     "pytest-cov>=5",
@@ -60,8 +62,9 @@ dev = [
     "build>=1.2",
     "twine>=5",
     "psutil>=5.9",
+    "pillow>=10.0",
 ]
-all = ["RSOSTB[coding,godot,hf,space,dev]"]
+all = ["RSOSTB[coding,godot,hf,graphs,space,dev]"]
 
 [project.scripts]
 rsostb = "rsostb.cli.main:main"
