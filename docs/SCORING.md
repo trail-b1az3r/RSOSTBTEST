@@ -288,6 +288,17 @@ including grading fields, and the resources) and the `scoring_config_hash`
 * Changing any task changes the dataset hash, with the same consequence.
 * Results are ranked together only if they share a `compat_key` (benchmark
   version, dataset version, scoring version, scoring hash, judge).
+* Each released benchmark version also keeps its **frozen scoring inputs**,
+  `benchmark/versions/v<X.Y>.scoring.json`: the scoring config, the category
+  weights and metrics, and the scoring fields of every task (no prompts or
+  answers). It must hash to the manifest's `scoring_config_hash` or it is
+  refused. `rsostb version freeze` writes it and `rsostb version check`
+  requires one per manifest.
+* `rsostb version regress results.jsonl ...` re-scores saved results with
+  the scoring version they recorded, against the frozen inputs of the
+  benchmark version they cite, and fails on any difference. The test suite
+  does the same for every saved baseline (`tests/test_scoring_v1_regression.py`),
+  so a change to v1 cannot ship unnoticed.
 
 Scoring **v2** (category-balanced mean of per-category scores) ships as an
 experimental alternative — `rsostb score results.jsonl --scoring-version v2`

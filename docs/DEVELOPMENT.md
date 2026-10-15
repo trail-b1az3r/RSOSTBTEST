@@ -115,3 +115,11 @@ benchmark version and a frozen manifest, and explain the change in
 `docs/SCORING.md` and the changelog. New aggregation ideas belong in a new
 scoring version module (`scoring/v2.py` is the example) rather than edits to
 `v1`.
+
+`tests/test_scoring_v1_regression.py` re-scores every saved v1 result
+(the benchmark 1.1 baselines in `examples/results/`, the 1.0 baselines in
+`tests/regression/v1/benchmark-1.0/` and the hand-built
+`tests/regression/v1/edge-cases.json`) against its frozen benchmark inputs and
+compares every number with what was saved and with `golden.json`. When it
+fails, v1 changed: fix the change, never the fixtures.
+`tests/regression/v1/make_fixtures.py` exists only to add a new fixture.
